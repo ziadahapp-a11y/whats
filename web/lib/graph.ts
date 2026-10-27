@@ -1,0 +1,109 @@
+// Thin client for the official WhatsApp Cloud API (Meta Graph API).
+
+import type { Config } from "./config";
+
+export class GraphError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+    public code?: number,
+  ) {
+    super(message);
+  }
+}
+
+/** Strips "+", spaces, dashes and brackets so "+966 50-123 4567" becomes "966501234567". */
+export function normalizePhone(input: string): string {
+  const digits = input.replace(/\D/g, "");
+  if (digits.length < 7 || digits.length > 15) {
+    throw new Error(`"${input}" is not a valid phone number: use the full international number with country code, e.g. 966501234567`);
+  }
+  return digits;
+}
+
+export type SendResult = { messageId: string; waId?: string };
+
+export class Graph {
+  constructor(
+    private cfg: Config,
+    private fetchImpl: typeof fetch = fetch,
+  ) {}
+
+  private base() {
+    return `https://graph.facebook.com/${this.cfg.graphVersion}`;
+  }
+
+  async call<T = any>(path: string, init: { method?: string; body?: unknown; query?: Record<string, string> } = {}): Promise<T> {
+    if (!this.cfg.accessToken) throw new GraphError("WHATSAPP_ACCESS_TOKEN is not set", 500);
+    const url = new URL(this.base() + path);
+    for (const [k, v] of Object.entries(init.query ?? {})) url.searchParams.set(k, v);
+    const res = await this.fetchImpl(url, {
+      method: init.method ?? (init.body ? "POST" : "GET"),
+      headers: {
+        Authorization: `Bearer ${this.cfg.accessToken}`,
+        ...(init.body ? { "Content-Type": "application/json" } : {}),
+      },
+      body: init.body ? JSON.stringify(init.body) : undefined,
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || data?.error) {
+      const e = data?.error ?? {};
+      const detail = e.error_data?.details ? ` (${e.error_data.details})` : "";
+      throw new GraphError(`${e.message ?? res.statusText}${detail}`, res.status, e.code);
+    }
+    return data as T;
+  }
+
+  /** POST /{phone-number-id}/messages with the common envelope filled in. */
+  async sendMessage(to: string, payload: Record<string, unknown>, replyTo?: string): Promise<SendResult> {
+    const body: Record<string, unknown> = {
+      messaging_product: "whatsapp",
+      recipient_type: "individual",
+      to: normalizePhone(to),
+      ...payload,
+    };
+    if (replyTo) body.context = { message_id: replyTo };
+    const data = await this.call<{ contacts?: { wa_id: string }[]; messages: { id: string }[] }>(`/${this.cfg.phoneNumberId}/messages`, { body });
+    return { messageId: data.messages?.[0]?.id ?? "", waId: data.contacts?.[0]?.wa_id };
+  }
+
+  /** Marks an inbound message (and everything before it) as read; optionally shows "typing…". */
+  async markRead(messageId: string, typing = false) {
+    return this.call(`/${this.cfg.phoneNumberId}/messages`, {
+      body: {
+        messaging_product: "whatsapp",
+        status: "read",
+        message_id: messageId,
+        ...(typing ? { typing_indicator: { type: "text" } } : {}),
+      },
+    });
+  }
+
+  async listTemplates(status?: string, limit = 50) {
+    if (!this.cfg.wabaId) throw new GraphError("WHATSAPP_WABA_ID is not set", 500);
+    const query: Record<string, string> = { fields: "name,status,language,category,components", limit: String(limit) };
+    if (status) query.status = status;
+    return this.call<{ data: unknown[] }>(`/${this.cfg.wabaId}/message_templates`, { query });
+  }
+
+  async phoneInfo() {
+    return this.call(`/${this.cfg.phoneNumberId}`, {
+      query: { fields: "display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput,messaging_limit_tier" },
+    });
+  }
+
+  async businessProfile() {
+    return this.call(`/${this.cfg.phoneNumberId}/whatsapp_business_profile`, {
+      query: { fields: "about,address,description,email,websites,vertical" },
+    });
+  }
+
+  /** Resolves a media ID to its metadata, then downloads the bytes (the URL needs the same token). */
+  async downloadMedia(mediaId: string, maxBytes = 5 * 1024 * 1024) {
+    const meta = await this.call<{ url: string; mime_type: string; file_size: number; sha256: string }>(`/${mediaId}`);
+    if (meta.file_size > maxBytes) return { meta, bytes: null as Uint8Array | null };
+    const res = await this.fetchImpl(meta.url, { headers: { Authorization: `Bearer ${this.cfg.accessToken}` } });
+    if (!res.ok) throw new GraphError(`media download failed: ${res.status}`, res.status);
+    return { meta, bytes: new Uint8Array(await res.arrayBuffer()) };
+  }
+}
