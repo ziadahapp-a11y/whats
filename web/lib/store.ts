@@ -45,8 +45,8 @@ export interface KV {
 }
 
 const WINDOW_SECONDS = 24 * 60 * 60;
-const PER_CHAT_CAP = 2000;
-const TTL_SECONDS = 180 * 24 * 60 * 60; // keep message bodies for 180 days
+const PER_CHAT_CAP = 50_000;
+const TTL_SECONDS = 3 * 365 * 24 * 60 * 60; // keep message bodies for 3 years
 
 export class Store {
   /** prefix keeps the official ("") and personal ("p:") caches apart in one Redis. */
@@ -62,11 +62,27 @@ export class Store {
     await this.kv.set(`${this.p}m:${m.id}`, merged, { ex: TTL_SECONDS });
     await this.kv.zadd(`${this.p}c:${m.waId}`, { score: m.timestamp, member: m.id });
     await this.kv.zremrangebyrank(`${this.p}c:${m.waId}`, 0, -(PER_CHAT_CAP + 1));
-    await this.kv.zadd(`${this.p}convs`, { score: m.timestamp, member: m.waId });
+    // Older messages (history backfill) must never push a chat down the list.
+    const lastAt = (await this.kv.get<number>(`${this.p}cl:${m.waId}`)) ?? 0;
+    if (m.timestamp >= lastAt) {
+      await this.kv.set(`${this.p}cl:${m.waId}`, m.timestamp);
+      await this.kv.zadd(`${this.p}convs`, { score: m.timestamp, member: m.waId });
+    }
     if (m.direction === "in") {
       const prev = (await this.kv.get<number>(`${this.p}in:${m.waId}`)) ?? 0;
       if (m.timestamp > prev) await this.kv.set(`${this.p}in:${m.waId}`, m.timestamp);
     }
+  }
+
+  /** The oldest message we hold for a chat, the anchor for asking WhatsApp for earlier ones. */
+  async oldest(waId: string): Promise<StoredMessage | null> {
+    const [id] = await this.kv.zrange<string[]>(`${this.p}c:${waId}`, 0, 0);
+    return id ? this.getMessage(id) : null;
+  }
+
+  /** Every chat id we have seen, most recent first. */
+  async allChats(): Promise<string[]> {
+    return this.kv.zrange<string[]>(`${this.p}convs`, 0, -1, { rev: true });
   }
 
   async setName(waId: string, name: string) {

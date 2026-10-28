@@ -7,7 +7,7 @@ import "@xyflow/react/dist/style.css";
 import { flowToGraph } from "@/lib/flows/graph";
 import type { Action, Cond, Graph, LogEntry, Trigger } from "@/lib/flows/types";
 import { call, errMsg, useApi, useCopy, useSession } from "../shared";
-import { Ctx, ICON, TITLE, nodeTypes, toEdge, toNode, type RunMark } from "./FlowBuilder";
+import { Ctx, Icon, TITLE, nodeTypes, toEdge, toNode, type RunMark } from "./FlowBuilder";
 import { ACTION_LABEL, type ActionType } from "./presets";
 
 type Run = LogEntry & { accountLabel?: string };
@@ -244,7 +244,7 @@ function Step({ s }: { s: LogEntry["actions"][number] }) {
   const more = !!(s.output || s.checks?.length);
   return (
     <li className={s.ok ? "" : "bad"}>
-      <span className="tl-dot" aria-hidden="true">{ICON[s.type] ?? "•"}</span>
+      <span className="tl-dot" aria-hidden="true"><Icon name={s.type} /></span>
       <div className="tl-body">
         <div className="tl-row">
           <strong>{stepTitle(s.type)}</strong>

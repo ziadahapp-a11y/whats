@@ -503,7 +503,7 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
 .fnode.action.ai { border-inline-start-color: #8b7bd8; }
 .fnode.ran { box-shadow: inset 0 0 0 2px var(--ok); }
 .fnode.failed { box-shadow: inset 0 0 0 2px var(--bad); }
-.fn-icon { font-size: 22px; width: 30px; text-align: center; flex: none; }
+.fn-icon { font-size: 22px; width: 30px; display: grid; place-items: center; color: var(--accent); flex: none; }
 .fn-text { min-width: 0; display: grid; }
 .fn-text strong { font-size: 14.5px; font-weight: 600; }
 .fn-text span { color: var(--muted); font-size: 12.5px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }
@@ -606,3 +606,306 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
 .builder-panel .hook-info label { font-size: 14px; color: var(--muted); }
 .builder-panel .hook-info .code { margin: 0; }
 .builder-panel .hook-info .code pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12.5px; }
+
+/* =====================================================================
+   Polish pass: tokens, overflow guards, contrast, touch targets, motion
+   ===================================================================== */
+:root {
+  --ease: cubic-bezier(.2, .7, .2, 1);
+  --dur-1: 120ms;
+  --dur-2: 220ms;
+}
+/* status colours readable in both themes (AA on cards and on their own tints) */
+.app, .gate {
+  --ok: #13734d;
+  --ok-ink: #0d5a3b;
+  --warn: #94570a;
+  --warn-ink: #7a4706;
+  --bad: #a8221a;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app, :root:not([data-theme="light"]) .gate { --ok: #4fd6a0; --ok-ink: #4fd6a0; --warn: #e8a94e; --warn-ink: #e8a94e; --bad: #f2b8b5; }
+}
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --muted: #4a5c5d; } }
+:root[data-theme="light"] { --muted: #4a5c5d; }
+
+/* grid and flex children may shrink below their content, so wide tables scroll inside their card instead of widening the page */
+.app .page > *, .app .card, .app .two > *, .app .run-grid > *, .app .kb-grid > *, .app .flows > *, .app .stack > * { min-width: 0; }
+.app .table-scroll { max-width: 100%; overflow-x: auto; }
+.app .compare.keys { display: block; overflow-x: auto; min-width: 0; max-width: 100%; }
+.app .compare.keys th, .app .compare.keys td { white-space: nowrap; }
+.app .kpi-label, .app .kpi-sub { overflow-wrap: anywhere; }
+
+/* status pills and tones on the shared tokens */
+.status.ok { color: var(--ok-ink); background: color-mix(in srgb, var(--ok) 14%, transparent); }
+.status.draft { color: var(--warn-ink); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.status.error { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.app .kpi.warn strong { color: var(--warn); }
+.app .kpi.bad strong { color: var(--bad); }
+.app .banner.warnb { background: color-mix(in srgb, var(--warn) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--warn) 45%, transparent); }
+.app .ok, .app .chip.on { color: var(--ok-ink); border-color: var(--ok); }
+.checks .ok { color: var(--accent); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .checks .no { color: #f2b8b5; } }
+
+/* labels with a checkbox wrap instead of overflowing narrow panels */
+.app label.sw { display: inline-flex; align-items: flex-start; gap: 8px; white-space: normal; min-width: 0; }
+.app label.sw input { margin-top: 3px; }
+
+/* touch: nothing tappable under 32px on phones */
+@media (pointer: coarse), (max-width: 600px) {
+  .copy { min-height: 32px; padding: 4px 14px; }
+  .app button.tag, .app .thread header .tag { min-height: 32px; padding: 4px 12px; display: inline-flex; align-items: center; }
+  .app .m .acts button { min-width: 32px; min-height: 32px; display: inline-grid; place-items: center; }
+  .app .btn.small { min-height: 36px; }
+}
+
+/* inbox: start-a-chat form when no chat is open */
+.app .newchat { width: min(440px, 100%); margin: 16px auto 0; display: grid; gap: 10px; padding: 18px; border-radius: var(--r-lg); background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line); text-align: start; }
+.app .newchat h4 { margin: 0; font: 600 17px var(--display); }
+.app .newchat textarea { min-height: 80px; }
+.app .chart-empty { display: grid; place-items: center; height: 150px; color: var(--muted); }
+
+/* ---------- motion ---------- */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes slide-up { from { opacity: 0; transform: translateY(12px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes pop-in { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: none; } }
+
+/* each page enters softly when the route changes */
+.route { animation: rise var(--dur-2) var(--ease) both; }
+/* first content after a skeleton fades in instead of popping */
+.app .card, .app .kpi, .app .banner, .app .note, .app .flowitem, .app .editor, .app .inbox { animation: fade var(--dur-2) var(--ease) both; }
+/* lists arrive one row after another (first rows only, so long lists are not slow) */
+.app .chatlist li, .app .list li, .app .timeline li, .app .flowlist > *, .app .kpis > *, .palette button {
+  animation: rise var(--dur-2) var(--ease) both;
+}
+.app .chatlist li:nth-child(2), .app .list li:nth-child(2), .app .timeline li:nth-child(2), .app .flowlist > :nth-child(2), .app .kpis > :nth-child(2), .palette button:nth-of-type(2) { animation-delay: 30ms; }
+.app .chatlist li:nth-child(3), .app .list li:nth-child(3), .app .timeline li:nth-child(3), .app .flowlist > :nth-child(3), .app .kpis > :nth-child(3), .palette button:nth-of-type(3) { animation-delay: 60ms; }
+.app .chatlist li:nth-child(4), .app .list li:nth-child(4), .app .timeline li:nth-child(4), .app .flowlist > :nth-child(4), .app .kpis > :nth-child(4), .palette button:nth-of-type(4) { animation-delay: 90ms; }
+.app .chatlist li:nth-child(n+5), .app .list li:nth-child(n+5), .app .timeline li:nth-child(n+5), .app .flowlist > :nth-child(n+5), .app .kpis > :nth-child(n+5), .palette button:nth-of-type(n+5) { animation-delay: 120ms; }
+/* the newest message in an open chat slides in */
+.app .msgs .m:last-of-type { animation: slide-up var(--dur-2) var(--ease) both; }
+.app .toast { animation: slide-up var(--dur-2) var(--ease) both; }
+.builder-panel .panel-stack { animation: fade var(--dur-1) var(--ease) both; }
+.app .answer, .app .tl-output, .app .compare-list li { animation: fade var(--dur-2) var(--ease) both; }
+
+/* feedback on every control */
+.app .btn, .app .app-nav a, .app .chatlist button, .app .flowitem, .palette button, .app .kpi.link, .app .seg button, .app button.tag {
+  transition: background-color var(--dur-1) var(--ease), color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), border-color var(--dur-1) var(--ease), transform var(--dur-1) var(--ease), filter var(--dur-1) var(--ease);
+}
+.app .btn:active:not(:disabled), .palette button:active, .app .kpi.link:active, .app .flowitem:active { transform: scale(.98); }
+.app .app-nav a:active { transform: scale(.97); }
+.app .btn:disabled { cursor: not-allowed; }
+.app .chatlist button:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.app .kpi.link:hover { transform: translateY(-1px); }
+.fnode { transition: box-shadow var(--dur-1) var(--ease), opacity var(--dur-2) var(--ease); }
+
+@media (prefers-reduced-motion: reduce) {
+  .route, .app *, .gate *, .app *::before, .app *::after { animation: none !important; transition: none !important; }
+}
+
+/* ---------- sign-in gate ---------- */
+.gate { min-height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); place-items: center; padding: 24px 16px; background:
+  radial-gradient(900px 500px at 85% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%),
+  radial-gradient(700px 400px at 0% 110%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 60%), var(--paper); }
+.gate-card { box-sizing: border-box; min-width: 0; width: min(420px, 100%); display: grid; gap: 14px; padding: 28px; border-radius: 24px; background: var(--paper-2); box-shadow: inset 0 0 0 1px var(--line), 0 24px 60px -30px #00000070; animation: pop-in var(--dur-2) var(--ease) both; }
+.gate-card .mark { font-size: 18px; }
+.gate-card h1 { margin: 6px 0 4px; font: 700 28px var(--display); }
+.gate-card p { margin: 0; font-size: 15px; line-height: 1.7; }
+.gate-card label { font-weight: 600; font-size: 14px; }
+.gate-card label.check { font-weight: 400; }
+.gate-card label.check input { width: 18px; height: 18px; flex: none; margin: 0; }
+.gate-input { position: relative; display: flex; }
+.gate-input input { flex: 1; min-width: 0; min-height: 48px; padding: 10px 16px; padding-inline-start: 84px; font: 400 16px var(--mono); border-radius: 14px; border: 1.5px solid var(--line); background: var(--paper); color: var(--ink); transition: border-color var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease); }
+.gate-input input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 18%, transparent); }
+.gate-input input[aria-invalid="true"] { border-color: var(--bad); }
+.gate-eye { all: unset; position: absolute; inset-inline-start: 8px; top: 50%; transform: translateY(-50%); min-height: 32px; padding: 0 12px; border-radius: 10px; font: 500 13px var(--body); color: var(--muted); cursor: pointer; }
+.gate-eye:hover, .gate-eye:focus-visible { color: var(--ink); background: var(--line); }
+.gate-card .btn { min-height: 48px; justify-content: center; font-size: 16px; }
+.gate-card .btn:disabled { opacity: .55; }
+.gate-card .banner { padding: 10px 14px; border-radius: 12px; font-size: 14px; }
+.gate-card .banner.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.gate-card .hint { color: var(--muted); font-size: 13.5px; }
+.gate-card code { font-size: .85em; background: var(--paper); padding: 1px 6px; border-radius: 4px; }
+.spinner { width: 16px; height: 16px; border-radius: 50%; border: 2px solid currentColor; border-inline-end-color: transparent; animation: spin .7s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* a checkbox label inside a panel grid is one row: box, then text that wraps */
+.app .grid2 label.sw, .app label.sw { display: flex; flex-direction: row; align-items: flex-start; gap: 8px; grid-column: 1 / -1; color: var(--ink); font-size: 14px; }
+
+/* device keys on phones: one card per key instead of a wide table */
+@media (max-width: 600px) {
+  .app .compare.keys, .app .compare.keys tbody, .app .compare.keys tr, .app .compare.keys td { display: block; white-space: normal; }
+  .app .compare.keys thead { display: none; }
+  .app .compare.keys tr { padding: 12px 0; border-bottom: 1px solid var(--line); }
+  .app .compare.keys td { border: 0; padding: 2px 0; }
+  .app .compare.keys td:first-child { font-weight: 600; }
+  .app .compare.keys td:not(:first-child):not(:last-child) { color: var(--muted); font-size: 14px; }
+  .app .compare.keys td:last-child { padding-top: 8px; }
+}
+
+/* landing: the "official" seal kept readable on the light background */
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --seal: #7a5404; } }
+:root[data-theme="light"] { --seal: #7a5404; }
+/* panel rules make inputs full width; a checkbox must stay its own size or it pushes its label out */
+.app label.sw input[type="checkbox"], .app label.check input[type="checkbox"] { width: 18px; min-width: 18px; flex: none; }
+/* the secret is typed left to right, so the show/hide button and the room for it are on the physical right */
+.gate-input input { padding-inline-start: 16px; padding-right: 84px; padding-left: 16px; }
+.gate-eye { inset-inline-start: auto; right: 8px; left: auto; }
+.app svg.ico { display: block; flex: none; }
+
+/* =====================================================================
+   Ziadah design tokens (Figma: Ziadah App DS, Colors / Typography / Buttons / Cards)
+   Structure, neutrals, radii, shadows and status scales come from Ziadah;
+   the brand colour stays the WhatsApp MCP green (--accent). Tokens only:
+   components pick them up in the steps that follow. Scoped to the dashboard.
+   ===================================================================== */
+.app, .gate {
+  /* neutrals: Base 1000/900/800/700/300/400 */
+  --paper: #ffffff;
+  --paper-2: #f8f8f8;
+  --paper-3: #f5f5f5;
+  --line: #ecebec;
+  --line-strong: #e1e0e1;
+  --ink: #0b0b0e;
+  --muted: #6a666d;
+  --subtle: #88858b;
+
+  /* brand tints, mixed from --accent so they work in both themes */
+  --accent-t1: color-mix(in srgb, var(--accent) 8%, var(--paper));
+  --accent-t2: color-mix(in srgb, var(--accent) 14%, var(--paper));
+  --accent-t3: color-mix(in srgb, var(--accent) 24%, var(--paper));
+  --accent-t4: color-mix(in srgb, var(--accent) 38%, var(--paper));
+  --accent-soft: var(--accent-t2);
+
+  /* status: text colours keep AA contrast; -solid is for filled alerts (white text), -bg for tints */
+  --ok: #13734d;
+  --ok-solid: #17803a;
+  --ok-bg: #e6f6ea;
+  --warn: #94570a;
+  --warn-solid: #b36a0b;
+  --warn-bg: #fbf0e2;
+  --bad: #b82e2e;
+  --bad-solid: #b82e2e;
+  --bad-bg: #f6e6e6;
+  --info: #1332e2;
+  --info-solid: #1332e2;
+  --info-bg: #e2e6fb;
+
+  /* radii: inputs and chips, cards, panels, pills */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* control heights: XS / S / M / L buttons */
+  --ctl-xs: 28px;
+  --ctl-s: 32px;
+  --ctl: 40px;
+  --ctl-l: 48px;
+
+  /* elevation: accent button, card, dropdown and dialog */
+  --shadow-1: 0 1px 2px #0000000a, 0 2px 6px -1px #00000014;
+  --shadow: 0 1px 2px #0000000a, 0 4px 12px -2px #00000014;
+  --shadow-pop: 0 8px 24px -6px #0000002e, 0 0 0 1px var(--line);
+
+  /* type: Manrope for Latin, Rubik picks up the Arabic glyphs Manrope lacks */
+  --font-ui: "Manrope", "Rubik", system-ui, sans-serif;
+  --display: var(--font-ui);
+  --body: var(--font-ui);
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 20px;
+  --fs-2xl: 28px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .app, :root:not([data-theme="light"]) .gate {
+    --paper: #0b0b0e;
+    --paper-2: #141418;
+    --paper-3: #101013;
+    --line: #26262c;
+    --line-strong: #34343b;
+    --ink: #f5f5f5;
+    --muted: #a3a0a6;
+    --subtle: #7b7880;
+    --ok: #4fd6a0;
+    --ok-solid: #1f9d52;
+    --ok-bg: #0f2a1a;
+    --warn: #e8a94e;
+    --warn-solid: #c97a12;
+    --warn-bg: #2d2210;
+    --bad: #f2b8b5;
+    --bad-solid: #c65858;
+    --bad-bg: #2f1616;
+    --info: #a1adf3;
+    --info-solid: #425be8;
+    --info-bg: #131a3d;
+    --shadow-1: 0 1px 2px #00000040, 0 2px 6px -1px #00000050;
+    --shadow: 0 1px 2px #00000040, 0 4px 12px -2px #00000060;
+    --shadow-pop: 0 8px 24px -6px #00000099, 0 0 0 1px var(--line);
+  }
+}
+:root[data-theme="dark"] .app, :root[data-theme="dark"] .gate {
+  --paper: #0b0b0e;
+  --paper-2: #141418;
+  --paper-3: #101013;
+  --line: #26262c;
+  --line-strong: #34343b;
+  --ink: #f5f5f5;
+  --muted: #a3a0a6;
+  --subtle: #7b7880;
+  --ok: #4fd6a0;
+  --ok-solid: #1f9d52;
+  --ok-bg: #0f2a1a;
+  --warn: #e8a94e;
+  --warn-solid: #c97a12;
+  --warn-bg: #2d2210;
+  --bad: #f2b8b5;
+  --bad-solid: #c65858;
+  --bad-bg: #2f1616;
+  --info: #a1adf3;
+  --info-solid: #425be8;
+  --info-bg: #131a3d;
+  --shadow-1: 0 1px 2px #00000040, 0 2px 6px -1px #00000050;
+  --shadow: 0 1px 2px #00000040, 0 4px 12px -2px #00000060;
+  --shadow-pop: 0 8px 24px -6px #00000099, 0 0 0 1px var(--line);
+}
+
+/* manual dark choice must work on a light OS too: same base values as the prefers-color-scheme block */
+:root[data-theme="dark"] {
+  --paper: #0e1a1c;
+  --paper-2: #132427;
+  --ink: #e4eeeb;
+  --muted: #93a8a6;
+  --line: #26393b;
+  --bubble-in: #18292c;
+  --bubble-out: #1d3d34;
+  --accent: #5cc3b4;
+  --accent-ink: #06201d;
+  --seal: #e0b44a;
+  --code-bg: #071113;
+  --code-ink: #d6e7e2;
+  --warn-bg: #2d2615;
+  color-scheme: dark;
+}
+
+/* copy-friendly values */
+.cp { display: inline-flex; align-items: center; gap: 6px; font: 500 0.88em ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--paper-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px; padding: 1px 8px; margin: 1px 2px; cursor: pointer; vertical-align: baseline; max-width: 100%; overflow-wrap: anywhere; text-align: left; }
+.cp:hover { border-color: var(--accent); }
+.cp i { font-style: normal; color: var(--muted); font-size: 0.9em; }
+.cp.ok { border-color: var(--accent); } .cp.ok i { color: var(--accent); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.fields { display: grid; gap: 8px; margin: 10px 0 18px; max-width: var(--measure); }
+.field { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; background: var(--code-bg); color: var(--code-ink); border-radius: 12px; padding: 10px 14px; }
+.field .fname { grid-column: 1 / -1; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; }
+.field .fname b { font-weight: 600; font-size: 13px; opacity: .75; }
+.field .fname small { font-size: 12px; opacity: .6; }
+.field code { min-width: 0; overflow-x: auto; font-size: 13.5px; white-space: pre; text-align: left; background: none; padding: 0; color: inherit; }
+.field .copy { position: static; }
+.toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; }
+.toc a { font-size: 14px; padding: 4px 14px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); text-decoration: none; }
+.toc a:hover { border-color: var(--accent); color: var(--ink); }
+td.vars { display: flex; flex-wrap: wrap; gap: 4px; }

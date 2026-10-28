@@ -69,7 +69,7 @@ export async function pair(raw: RawKV, store: Store, phone: string, emit: (e: Pa
           if (connection === "open") {
             emit({ type: "linked", me: sock.user?.id });
             // Stay connected while WhatsApp pushes the initial history.
-            const quietFor = 12_000;
+            const quietFor = 45_000; // the phone can take a while between history batches
             let last = Date.now();
             sock.ev.on("messaging-history.set", () => (last = Date.now()));
             while (Date.now() < deadline - 8_000 && Date.now() - last < quietFor) await new Promise((r) => setTimeout(r, 1000));

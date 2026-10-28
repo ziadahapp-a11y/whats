@@ -30,6 +30,7 @@ export async function GET(req: Request) {
       account: t.id,
       kind: t.kind,
       accounts: await targets(a),
+      backfill: (await t.backfillStatus?.()) ?? null,
       lastSync: t.kind === "personal" ? await lastSync(t.state) : null,
       chats: await Promise.all(
         chats.map(async (c) => ({
@@ -71,6 +72,9 @@ export async function POST(req: Request) {
         return Response.json({ marked: await t.read(String(b.chat ?? "")) });
       case "sync":
         return Response.json({ synced: true, ...(await t.sync()) });
+      case "backfill":
+        if (!t.backfill) return err("الرقم الرسمي لا يدعم جلب التاريخ القديم: Meta ترسل الرسائل لحظيًا فقط.", 400);
+        return Response.json(await t.backfill(!!b.reset));
       case "tag": {
         const chat = String(b.chat ?? "");
         const tag = String(b.tag ?? "").trim().slice(0, 40);

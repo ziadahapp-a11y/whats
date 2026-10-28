@@ -1,9 +1,11 @@
 import { aiStatus } from "@/lib/flows/ai";
 import { admin } from "@/lib/admin";
+import { secretProblem } from "@/lib/access";
 import { listAccounts } from "@/lib/wa/accounts";
 import { isPaired } from "@/lib/wa/auth";
 import { lastSync } from "@/lib/wa/session";
 import { isPaused } from "@/lib/flows/storage";
+import { versionInfo } from "@/lib/version";
 
 export const dynamic = "force-dynamic";
 
@@ -24,5 +26,7 @@ export async function GET(req: Request) {
     cron: !!process.env.CRON_SECRET,
     official: !!a.cfg.accessToken && !!a.cfg.phoneNumberId,
     flowsPaused: await isPaused(a.base),
+    version: versionInfo(),
+    secretWarning: secretProblem(a.cfg.mcpSecret),
   });
 }

@@ -15,7 +15,7 @@ This folder is a Next.js app that hosts the landing page and two MCP servers:
 4. **Open `/personal`**, enter `MCP_SECRET`, link your number with the pairing code, and press *Test AI* to check the key and model name.
 5. **Connect your assistant:** create a device key in `/personal` and paste the ready-made URL (`.../api/personal/mcp?key=wmk_...`) into Claude, Cursor or Claude Code.
 
-Full walkthrough with every variable and troubleshooting: `/guide` on your deployment. Handing the system to a customer: [docs/CUSTOMERS.md](../docs/CUSTOMERS.md).
+Full walkthrough with every variable and troubleshooting: `/guide` on your deployment. Handing the system to a customer: [docs/CUSTOMERS.md](../docs/CUSTOMERS.md). Updates and customer feedback: [docs/UPDATES.md](../docs/UPDATES.md).
 
 ## Official mode
 

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { reportUrl } from "@/lib/version";
 import { call, errMsg, invalidate, phoneOf, useApi, useCopy, useSession, when, type Status } from "./shared";
 
 type Key = { id: string; label: string; accounts: string[] | "*"; scope: "read" | "full"; createdAt: number; lastUsed?: number };
@@ -20,6 +21,7 @@ function Home({ secret, status, reload, origin }: { secret: string; status: Stat
         <Chip ok={status.ai} label="الذكاء الاصطناعي" optional />
         <Chip ok={status.official} label="الرقم الرسمي (Cloud API)" optional />
       </div>
+      {status.secretWarning && <div className="note"><p><strong>تنبيه على كلمة السر:</strong> {status.secretWarning} لا تستخدمها داخل الروابط، وأنشئ مفتاح جهاز (wmk_…) للربط بدلها.</p></div>}
       <AiTest secret={secret} configured={status.ai} />
       {!status.storage && <div className="note"><p>اربط Upstash Redis من تبويب Storage في مشروعك على فيرسل، ثم أعد النشر. بدونها ما يمكن حفظ الجلسة.</p></div>}
 
@@ -32,6 +34,12 @@ function Home({ secret, status, reload, origin }: { secret: string; status: Stat
         لكل جهاز أو شخص مفتاح خاص فيه رابط جاهز. تلصق الرابط في إعدادات المساعد وخلاص، بدون هيدرات. تقدر تحدد له أرقام معينة، أو تخليه للقراءة فقط، وتلغيه متى ما بغيت بدون ما يتأثر الباقي.
       </p>
       <Keys secret={secret} status={status} origin={origin} />
+
+      <h3 style={{ marginTop: 40 }}>النسخة والملاحظات</h3>
+      <p className="muted">
+        نسختك: <code dir="ltr">{status.version?.commit ?? "غير معروفة"}</code>. لو واجهت خطأ أو بغيت ميزة، اضغط الزر وراح يفتح لك بلاغ جاهز فيه رقم النسخة وحالة الإعدادات (بدون أي مفتاح أو رسالة).
+      </p>
+      <a className="btn ghost" target="_blank" rel="noopener noreferrer" href={reportUrl(status.version ?? { repo: null, commit: null, branch: null, env: "?" }, { "قاعدة البيانات": status.storage, "المزامنة المجدولة": status.cron, "الذكاء الاصطناعي": status.ai, "الرقم الرسمي": status.official, "أرقام مربوطة": String(status.accounts.filter((a) => a.paired).length) }, origin)}>أرسل ملاحظة أو بلاغ خطأ</a>
     </>
   );
 }

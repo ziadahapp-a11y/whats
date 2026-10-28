@@ -34,7 +34,31 @@ export const TITLE: Record<ActionType, string> = {
   reply: "ردّ", ai_reply: "رد بالذكاء الاصطناعي", send: "إرسال لرقم", ai: "توليد نص بالذكاء الاصطناعي", agent: "مساعد بالأدوات",
   react: "تفاعل", mark_read: "تعليم كمقروءة", tag: "وسم", webhook: "Webhook", delay: "انتظار", stop: "إيقاف الباقي",
 };
-export const ICON: Record<string, string> = { trigger: "⚡", condition: "🔀", reply: "💬", ai_reply: "🤖", send: "📤", ai: "✨", agent: "🛠", react: "😀", mark_read: "✓", tag: "🏷", webhook: "🔗", delay: "⏱", stop: "⛔" };
+// stroke icons (24px grid) so every node reads the same on every system, unlike emoji
+const ICON_PATH: Record<string, string> = {
+  trigger: "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
+  condition: "M6 3v6a6 6 0 006 6h6M18 15l-3-3M18 15l-3 3M6 21v-6",
+  reply: "M4 5h16v11H8l-4 4V5z",
+  ai_reply: "M7 8h10v9H7zM12 4v4M9.5 12h.01M14.5 12h.01M4 12v2M20 12v2",
+  send: "M4 12l16-8-6 16-3-7-7-1z",
+  ai: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3zM19 16l.7 2.3L22 19l-2.3.7L19 22l-.7-2.3L16 19l2.3-.7L19 16z",
+  agent: "M14.7 6.3a4 4 0 00-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 005.4-5.4l-2.5 2.5-2.4-.6-.6-2.4 2.5-2.5z",
+  react: "M12 21a9 9 0 100-18 9 9 0 000 18zM8.5 14a4 4 0 007 0M9 9.5h.01M15 9.5h.01",
+  mark_read: "M2 13l4 4L15 8M10 15l2 2 9-9",
+  tag: "M3 12V4h8l10 10-8 8L3 12zM7.5 8h.01",
+  webhook: "M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1",
+  delay: "M12 21a8 8 0 100-16 8 8 0 000 16zM12 9v4l2.5 2.5M10 2h4",
+  stop: "M12 21a9 9 0 100-18 9 9 0 000 18zM5.6 5.6l12.8 12.8",
+};
+export function Icon({ name }: { name: string }) {
+  const d = ICON_PATH[name];
+  if (!d) return <>•</>;
+  return (
+    <svg className="ico" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
 const GROUPS: { title: string; types: ActionType[] }[] = [
   { title: "رسائل", types: ["reply", "send", "react", "mark_read"] },
   { title: "ذكاء اصطناعي", types: ["ai_reply", "ai", "agent"] },
@@ -92,7 +116,7 @@ function Card({ kind, icon, title, sub, run, selected, children }: { kind: strin
   const { readOnly } = useContext(Ctx);
   return (
     <div className={`fnode ${kind}${selected ? " sel" : ""}${run ? (run.ok ? " ran" : " failed") : readOnly ? " idle" : ""}`} dir="rtl">
-      <span className="fn-icon" aria-hidden="true">{icon}</span>
+      <span className="fn-icon" aria-hidden="true"><Icon name={icon} /></span>
       <div className="fn-text">
         <strong>{title}</strong>
         {sub && <span>{sub}</span>}
@@ -106,7 +130,7 @@ function Card({ kind, icon, title, sub, run, selected, children }: { kind: strin
 function TriggerNode({ id, data, selected }: NodeProps<FNode>) {
   const { trigger } = useContext(Ctx);
   return (
-    <Card kind="trigger" icon={ICON.trigger} title="المحفز" sub={triggerSummary(trigger)} run={data.run} selected={selected}>
+    <Card kind="trigger" icon="trigger" title="المحفز" sub={triggerSummary(trigger)} run={data.run} selected={selected}>
       <Handle type="source" position={Position.Right} id="next" />
       <Plus id={id} port="next" top="50%" />
     </Card>
@@ -116,7 +140,7 @@ function TriggerNode({ id, data, selected }: NodeProps<FNode>) {
 function ConditionNode({ id, data, selected }: NodeProps<FNode>) {
   const spec = data.spec as Extract<Spec, { kind: "condition" }>;
   return (
-    <Card kind="condition" icon={ICON.condition} title="شرط" sub={condSummary(spec.conditions)} run={data.run} selected={selected}>
+    <Card kind="condition" icon="condition" title="شرط" sub={condSummary(spec.conditions)} run={data.run} selected={selected}>
       <Handle type="target" position={Position.Left} />
       <Handle type="source" position={Position.Right} id="true" style={{ top: "32%" }} />
       <Handle type="source" position={Position.Right} id="false" style={{ top: "70%" }} />
@@ -131,7 +155,7 @@ function ConditionNode({ id, data, selected }: NodeProps<FNode>) {
 function ActionNode({ id, data, selected }: NodeProps<FNode>) {
   const spec = data.spec as Extract<Spec, { kind: "action" }>;
   return (
-    <Card kind={`action ${spec.action.type.startsWith("ai") || spec.action.type === "agent" ? "ai" : ""}`} icon={ICON[spec.action.type]} title={TITLE[spec.action.type]} sub={actionSummary(spec.action)} run={data.run} selected={selected}>
+    <Card kind={`action ${spec.action.type.startsWith("ai") || spec.action.type === "agent" ? "ai" : ""}`} icon={spec.action.type} title={TITLE[spec.action.type]} sub={actionSummary(spec.action)} run={data.run} selected={selected}>
       <Handle type="target" position={Position.Left} />
       {spec.action.type !== "stop" && <Handle type="source" position={Position.Right} id="next" />}
       {spec.action.type !== "stop" && <Plus id={id} port="next" top="50%" />}
@@ -312,12 +336,12 @@ function Palette({ from, port, onPick, onClose }: { from?: FNode; port?: Port; o
       {from && <p className="hint">بعد {from.type === "trigger" ? "المحفز" : from.type === "condition" ? `الشرط (${port === "true" ? "لما يتحقق" : "لما ما يتحقق"})` : "الإجراء"}. تقدر بعدين تسحب الأسلاك بين العقد.</p>}
       <div className="palette">
         <h5>منطق</h5>
-        <button type="button" onClick={() => onPick("condition")}><span>{ICON.condition}</span><div><strong>شرط</strong><small>يتفرع إلى نعم / لا</small></div></button>
+        <button type="button" onClick={() => onPick("condition")}><span><Icon name="condition" /></span><div><strong>شرط</strong><small>يتفرع إلى نعم / لا</small></div></button>
         {GROUPS.map((g) => (
           <div key={g.title} className="palette-group">
             <h5>{g.title}</h5>
             {g.types.map((t) => (
-              <button type="button" key={t} onClick={() => onPick(t)}><span>{ICON[t]}</span><div><strong>{TITLE[t]}</strong><small>{ACTION_LABEL[t]}</small></div></button>
+              <button type="button" key={t} onClick={() => onPick(t)}><span><Icon name={t} /></span><div><strong>{TITLE[t]}</strong><small>{ACTION_LABEL[t]}</small></div></button>
             ))}
           </div>
         ))}
@@ -332,7 +356,7 @@ function NodeEditor({ node, f, secret, setTrigger, data, patch, onRemove }: { no
   return (
     <div className="panel-stack">
       <div className="panel-head">
-        <h4><span aria-hidden="true">{ICON[spec.kind === "action" ? spec.action.type : spec.kind]}</span> {title}</h4>
+        <h4><span aria-hidden="true"><Icon name={spec.kind === "action" ? spec.action.type : spec.kind} /></span> {title}</h4>
         {spec.kind !== "trigger" && <button type="button" className="btn ghost small danger" onClick={onRemove}>احذف العقدة</button>}
       </div>
       {node.data.run && <p className={node.data.run.ok ? "mode-note" : "err"}>{node.data.run.ok ? "✓" : "✗"} {node.data.run.detail}</p>}

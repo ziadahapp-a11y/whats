@@ -30,7 +30,7 @@ async function guarded(req: Request) {
   }
   const p = await authenticate(req, cfg, base);
   if (!p) {
-    return Response.json({ error: "unauthorized" }, { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="whats-mcp"' } });
+    return Response.json({ error: "unauthorized: the key in the URL is missing or wrong. Use the full link from /personal (key=wmk_...). Never type or edit the key by hand, and do not add # or other characters after it." }, { status: 401, headers: { "WWW-Authenticate": 'Bearer realm="whats-mcp"' } });
   }
   // `?account=work` pins a connection to one number, so a URL alone says which one it is.
   const pin = new URL(req.url).searchParams.get("account")?.toLowerCase();

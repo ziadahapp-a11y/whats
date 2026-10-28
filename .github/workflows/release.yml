@@ -1,0 +1,116 @@
+name: Release
+
+# Builds ready-to-run binaries for macOS, Linux and Windows and attaches them
+# to a GitHub Release. Trigger by pushing a tag such as v1.0.0, or run it by
+# hand from the Actions tab (it then publishes under the tag you enter).
+#
+# go-sqlite3 needs CGO, so each platform is built on its own native runner
+# instead of cross-compiling from one machine.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to publish (e.g. v1.0.0)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.goos }}-${{ matrix.goarch }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest,    goos: linux,   goarch: amd64 }
+          - { runner: ubuntu-24.04-arm, goos: linux,   goarch: arm64 }
+          - { runner: macos-latest,     goos: darwin,  goarch: arm64 }
+          - { runner: macos-latest,     goos: darwin,  goarch: amd64, cc: 'clang -arch x86_64' }
+          - { runner: windows-latest,   goos: windows, goarch: amd64 }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Install C compiler (Windows)
+        if: matrix.goos == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: UCRT64
+          install: mingw-w64-ucrt-x86_64-gcc
+          path-type: inherit
+
+      - name: Resolve version
+        id: ver
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then v="${{ github.event.inputs.tag }}"; else v="${GITHUB_REF_NAME}"; fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Unix)
+        if: matrix.goos != 'windows'
+        shell: bash
+        env:
+          CGO_ENABLED: '1'
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CC: ${{ matrix.cc || 'cc' }}
+        run: |
+          mkdir -p dist/pkg
+          go build -trimpath -ldflags "-s -w -X main.Version=${{ steps.ver.outputs.version }}" -o dist/pkg/whatsapp-mcp ./cmd/whatsapp-mcp
+          cp README.md README.ar.md LICENSE dist/pkg/
+          tar -C dist/pkg -czf "dist/whatsapp-mcp_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz" .
+
+      - name: Build (Windows)
+        if: matrix.goos == 'windows'
+        shell: msys2 {0}
+        env:
+          CGO_ENABLED: '1'
+          GOOS: windows
+          GOARCH: amd64
+          CC: gcc
+        run: |
+          mkdir -p dist/pkg
+          go build -trimpath -ldflags "-s -w -extldflags=-static -X main.Version=${{ steps.ver.outputs.version }}" -o dist/pkg/whatsapp-mcp.exe ./cmd/whatsapp-mcp
+          cp README.md README.ar.md LICENSE dist/pkg/
+          cd dist/pkg && powershell -NoProfile -Command "Compress-Archive -Path * -DestinationPath ../whatsapp-mcp_windows_amd64.zip"
+
+      - name: Smoke test
+        if: matrix.goos != 'darwin' || matrix.goarch == 'arm64'
+        shell: bash
+        run: |
+          bin=dist/pkg/whatsapp-mcp; [ -f "$bin.exe" ] && bin="$bin.exe"
+          "$bin" smoke
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: whatsapp-mcp_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        run: cd dist && sha256sum * > checksums.txt && cat checksums.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          files: dist/*

@@ -69,3 +69,16 @@ test("master, extra and device keys", async () => {
   await assert.rejects(createDeviceKey(base, { label: " ", accounts: "*", scope: "full" }), /name/);
   await assert.rejects(createDeviceKey(base, { label: "x", accounts: [], scope: "full" }), /at least one/i);
 });
+
+test("secrets that break URLs are flagged, and an encoded # or + still authenticates", async () => {
+  const { secretProblem } = await import("./access");
+  assert.equal(secretProblem("a".repeat(30)), null);
+  assert.match(secretProblem("example-owner@site#label-0123456789") ?? "", /تخرّب/);
+  assert.match(secretProblem("short") ?? "", /24/);
+  const base = new MemoryRawKV();
+  const odd = "example-owner@site#label-0123456789";
+  const plus = "abcdefghijklmnopqrstuvwxyz+1234";
+  assert.equal((await authenticate(new Request("https://x.test/m?key=example-owner@site%23label-0123456789"), { mcpSecret: odd }, base))?.kind, "master");
+  assert.equal(await authenticate(new Request("https://x.test/m?key=example-owner@site"), { mcpSecret: odd }, base), null);
+  assert.equal((await authenticate(new Request("https://x.test/m?key=abcdefghijklmnopqrstuvwxyz+1234"), { mcpSecret: plus }, base))?.kind, "master");
+});

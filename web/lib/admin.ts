@@ -12,7 +12,7 @@ export async function admin(req: Request): Promise<Admin | Response> {
   if (!ctx.cfg.mcpSecret || ctx.cfg.mcpSecret.length < 24) return Response.json({ error: "MCP_SECRET is not configured (24+ characters)." }, { status: 503 });
   if (!ctx.cfg.redisUrl && process.env.ALLOW_MEMORY_STORE !== "1") return Response.json({ error: "Connect Upstash Redis first (Storage tab in Vercel), then redeploy." }, { status: 503 });
   const p = await authenticate(req, ctx.cfg, ctx.base);
-  if (!p || p.kind !== "master") return Response.json({ error: "Wrong or missing MCP_SECRET." }, { status: 401 });
+  if (!p || p.kind !== "master") return Response.json({ error: "Wrong or missing MCP_SECRET. (If your secret contains # ? & + or spaces, replace it with letters and numbers only.)" }, { status: 401 });
   return ctx;
 }
 

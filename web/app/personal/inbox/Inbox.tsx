@@ -37,6 +37,8 @@ function App({ secret, status }: { secret: string; status: Status }) {
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
   const [newTo, setNewTo] = useState("");
+  const [bf, setBf] = useState<{ running: boolean; line: string }>({ running: false, line: "" });
+  const stopBf = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
 
@@ -125,6 +127,23 @@ function App({ secret, status }: { secret: string; status: Status }) {
       say(kind === "official" ? "الرقم الرسمي يوصله كل شي لحظياً من Meta" : `تمت المزامنة، ${d.newMessages} رسالة جديدة`);
     });
 
+  // Each call fetches a slice (under two minutes); we keep calling until the phone has nothing older.
+  const backfill = async (reset = false) => {
+    stopBf.current = false;
+    setBf({ running: true, line: "أطلب الرسائل الأقدم من الجوال… خلّ الجوال متصل بالإنترنت" });
+    try {
+      for (let first = true; ; first = false) {
+        const r = await call<{ finished: boolean; left: number; chats: number; added: number }>(secret, "/api/personal/inbox", { body: { op: "backfill", account, reset: reset && first } });
+        setBf({ running: !r.finished && !stopBf.current, line: r.finished ? `اكتمل: ${r.added} رسالة قديمة جُلبت من ${r.chats} محادثة` : `جاري الجلب… بقي ${r.left} من ${r.chats} محادثة (جُلب ${r.added} رسالة)` });
+        await loadChats();
+        if (r.finished || stopBf.current) break;
+      }
+    } catch (e) {
+      setBf({ running: false, line: e instanceof Error ? e.message : "تعذّر الجلب، أعد المحاولة وهو يكمل من حيث وقف" });
+    }
+    setBf((x) => ({ ...x, running: false }));
+  };
+
   const react = (m: Msg, emoji: string) => act("react", () => call(secret, "/api/personal/inbox", { body: { op: "react", account, chat: m.waId, messageId: m.id, emoji } }), "تم التفاعل");
   const markRead = () => active && act("read", () => call(secret, "/api/personal/inbox", { body: { op: "read", account, chat: active } }), "تم تعليمها كمقروءة");
   const tagOp = (t: string, remove = false) =>
@@ -164,7 +183,11 @@ function App({ secret, status }: { secret: string; status: Status }) {
               <button type="button" className={`btn small ${tab === "chats" ? "solid" : "ghost"}`} onClick={() => setTab("chats")}>المحادثات</button>
               <button type="button" className={`btn small ${tab === "drafts" ? "solid" : "ghost"}`} onClick={() => setTab("drafts")}>المسودات{pending ? ` (${pending})` : ""}</button>
               <button type="button" className="btn small ghost" onClick={sync} disabled={busy === "sync"}>{busy === "sync" ? "…" : "زامن"}</button>
+              {kind === "personal" && (bf.running
+                ? <button type="button" className="btn small ghost" onClick={() => { stopBf.current = true; }}>إيقاف الجلب</button>
+                : <button type="button" className="btn small ghost" onClick={() => backfill()} title="يجلب الرسائل الأقدم من الجوال على دفعات">اجلب التاريخ القديم</button>)}
             </div>
+            {bf.line && <p className="hint" style={{ margin: "6px 0 0" }}>{bf.line}</p>}
           </div>
           {tab === "chats" ? (
             <ul className="chatlist">
@@ -201,10 +224,13 @@ function App({ secret, status }: { secret: string; status: Status }) {
         <section className="thread" aria-label="المحادثة">
           {!open ? (
             <div className="empty">
-              <p>اختر محادثة من القائمة، أو اكتب رقماً لبدء محادثة جديدة.</p>
-              <form onSubmit={send} className="composer" style={{ width: "min(420px, 100%)", margin: "12px auto 0", border: 0 }}>
-                <input dir="ltr" placeholder="966501234567" value={newTo} onChange={(e) => setNewTo(e.target.value)} />
-                <textarea placeholder="الرسالة" value={text} onChange={(e) => setText(e.target.value)} />
+              <p>اختر محادثة من القائمة، أو ابدأ محادثة جديدة.</p>
+              <form onSubmit={send} className="newchat">
+                <h4>محادثة جديدة</h4>
+                <label className="muted small" htmlFor="newchat-to">الرقم مع رمز الدولة</label>
+                <input id="newchat-to" dir="ltr" inputMode="tel" placeholder="966501234567" value={newTo} onChange={(e) => setNewTo(e.target.value)} />
+                <label className="muted small" htmlFor="newchat-text">الرسالة</label>
+                <textarea id="newchat-text" placeholder="اكتب رسالتك…" value={text} onChange={(e) => setText(e.target.value)} />
                 <button className="btn solid" disabled={!newTo || !text.trim() || busy === "send"}>{busy === "send" ? "يرسل…" : "أرسل"}</button>
               </form>
               {kind === "official" && <p className="hint">الرقم الرسمي يرسل نص حر فقط خلال 24 ساعة من آخر رسالة للعميل.</p>}

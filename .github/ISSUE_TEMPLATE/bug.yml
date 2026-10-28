@@ -1,0 +1,16 @@
+name: خطأ أو ملاحظة
+description: بلاغ من عميل أو مستخدم
+labels: [customer]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: وش صار؟
+      description: اكتب الخطوات وما تتوقعه. لا تلصق أي مفتاح أو كلمة سر أو رسائل خاصة.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: رقم النسخة
+      description: يظهر في لوحة التحكم ← النسخة والملاحظات

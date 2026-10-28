@@ -219,6 +219,7 @@ function Chart({ hourly }: { hourly: Data["hourly"] }) {
   const max = Math.max(1, ...hourly.map((h) => h.in + h.out));
   const total = hourly.reduce((s, h) => s + h.in + h.out, 0);
   const W = 720, H = 150, base = 124, bw = 22, step = W / hourly.length;
+  if (!total) return <div className="chart-empty">ما فيه رسائل آخر 24 ساعة. أول ما توصل رسائل أو تزامن، يطلع النشاط هنا.</div>;
   return (
     <div className="chart" dir="ltr">
       <svg viewBox={`0 0 ${W} ${H}`} role="img" aria-label={`${total} رسالة في آخر 24 ساعة`} preserveAspectRatio="xMidYMid meet">

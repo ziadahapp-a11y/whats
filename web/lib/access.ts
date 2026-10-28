@@ -35,6 +35,17 @@ function safeEqual(a: string, b: string): boolean {
   return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
+/** Characters that survive being pasted into a URL unchanged. */
+const URL_SAFE = /^[A-Za-z0-9_.~-]+$/;
+
+/** A plain-language problem with a secret the owner chose, or null when it is fine. */
+export function secretProblem(secret: string): string | null {
+  if (!secret) return "MCP_SECRET غير مضبوط.";
+  if (secret.length < 24) return "MCP_SECRET أقصر من 24 حرف.";
+  if (!URL_SAFE.test(secret)) return "MCP_SECRET فيه رموز تخرّب الروابط (مثل # ? & + @ أو مسافة). استبدله بنص من حروف وأرقام فقط (زر «ولّد كلمتي السر» في الصفحة الرئيسية).";
+  return null;
+}
+
 export function extractToken(req: Request): string {
   const header = req.headers.get("authorization") ?? "";
   const bearer = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
@@ -42,8 +53,17 @@ export function extractToken(req: Request): string {
 }
 
 export async function authenticate(req: Request, cfg: { mcpSecret: string }, base: RawKV, env: Record<string, string | undefined> = process.env): Promise<Principal | null> {
-  const token = extractToken(req);
-  if (!token) return null;
+  const raw = extractToken(req);
+  if (!raw) return null;
+  // A "+" in a query string arrives as a space; accept it as the plus it was meant to be.
+  for (const token of new Set([raw, raw.replace(/ /g, "+")])) {
+    const hit = await authenticateToken(token, cfg, base, env);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+async function authenticateToken(token: string, cfg: { mcpSecret: string }, base: RawKV, env: Record<string, string | undefined>): Promise<Principal | null> {
   if (cfg.mcpSecret.length >= 24 && safeEqual(token, cfg.mcpSecret)) return { kind: "master", id: "master", accounts: "*", scope: "full" };
   for (const extra of (env.MCP_SECRETS ?? "").split(",").map((s) => s.trim())) {
     if (extra.length >= 24 && safeEqual(token, extra)) return { kind: "extra", id: sha(extra).slice(0, 8), accounts: "*", scope: "full" };

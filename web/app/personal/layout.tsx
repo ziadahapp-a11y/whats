@@ -44,7 +44,10 @@ function Shell({ status, children }: { status: Status; children: ReactNode }) {
           {status.flowsPaused && <span className="tag">الفلوات متوقفة</span>}
         </div>
       </aside>
-      <main className="app-main">{children}</main>
+      <main className="app-main">
+        {/* keyed by route: each page enters with a short fade instead of swapping in place */}
+        <div key={path} className="route">{children}</div>
+      </main>
     </div>
   );
 }

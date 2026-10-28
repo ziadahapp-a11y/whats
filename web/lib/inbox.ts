@@ -9,6 +9,7 @@ import type { RawKV } from "./wa/auth";
 import { markRead, sendReaction, sendText } from "./wa/ops";
 import { toJid, withWhatsApp } from "./wa/session";
 import { syncAccount } from "./flows/sync";
+import { backfillStep, readBackfill, resetBackfill, type BackfillProgress } from "./wa/backfill";
 
 export type Target = {
   id: string;
@@ -21,6 +22,9 @@ export type Target = {
   react(chat: string, messageId: string, emoji: string): Promise<void>;
   read(chat: string): Promise<number>;
   sync(): Promise<{ newMessages: number }>;
+  /** Personal numbers only: pulls older history from the phone in resumable slices. */
+  backfill?(reset?: boolean): Promise<BackfillProgress>;
+  backfillStatus?(): Promise<{ done: number; added: number; finishedAt?: number } | null>;
 };
 
 export const officialConfigured = (a: Admin) => !!a.cfg.accessToken && !!a.cfg.phoneNumberId;
@@ -76,5 +80,13 @@ export async function target(a: Admin, id: string | null | undefined): Promise<T
       return incoming.length;
     },
     sync: async () => ({ newMessages: (await syncAccount(a.base, d, { maxMs: 100_000 })).ingested }),
+    backfill: async (reset) => {
+      if (reset) await resetBackfill(d.raw);
+      return backfillStep(d, { maxMs: 100_000 });
+    },
+    backfillStatus: async () => {
+      const s = await readBackfill(d.raw);
+      return s && { done: s.done.length, added: s.added, finishedAt: s.finishedAt };
+    },
   };
 }
