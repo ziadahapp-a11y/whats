@@ -139,6 +139,21 @@ test("a read-only key gets the read tools only", () => {
   assert.deepEqual(names(false), ["list_conversations", "list_messages", "search_messages", "get_media", "list_templates", "get_number_status"]);
 });
 
+test("conversation list and count stay right after loading in parallel", async () => {
+  const store = new Store(new MemoryKV());
+  for (let i = 1; i <= 3; i++) {
+    await ingest(payload([{ from: `96650000000${i}`, id: `p${i}`, timestamp: String(now + i), type: "text", text: { body: `رسالة ${i}` } }], [], "messages", { contacts: [{ wa_id: `96650000000${i}`, profile: { name: `عميل ${i}` } }] }), store, "PN1");
+  }
+  const list = await store.conversations(10, undefined, now);
+  assert.deepEqual(list.map((c) => c.waId), ["966500000003", "966500000002", "966500000001"]);
+  assert.equal(list[0].name, "عميل 3");
+  assert.equal(list[0].last?.text, "رسالة 3");
+  assert.deepEqual((await store.conversations(10, "عميل 2", now)).map((c) => c.waId), ["966500000002"]);
+  assert.equal((await store.conversations(2, undefined, now)).length, 2);
+  assert.equal(await store.countConversations(), 3);
+  assert.equal(await store.countConversations(2), 2);
+});
+
 test("phone normalisation", () => {
   assert.equal(normalizePhone("+966 50-000 0001"), "966500000001");
   assert.throws(() => normalizePhone("123"));

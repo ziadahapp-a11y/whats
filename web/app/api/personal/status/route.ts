@@ -15,8 +15,8 @@ export async function GET(req: Request) {
   const accounts = await Promise.all(
     (await listAccounts(a.base)).map(async (acc) => {
       const d = a.account(acc.id);
-      const [info, last, chats] = await Promise.all([isPaired(d.raw), lastSync(d.raw), d.store.conversations(200)]);
-      return { id: acc.id, label: acc.label, ...info, lastSync: last, cachedChats: chats.length };
+      const [info, last, chats] = await Promise.all([isPaired(d.raw), lastSync(d.raw), d.store.countConversations(200)]);
+      return { id: acc.id, label: acc.label, ...info, lastSync: last, cachedChats: chats };
     }),
   );
   return Response.json({

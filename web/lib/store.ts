@@ -143,17 +143,34 @@ export class Store {
     const scan = query ? 500 : limit;
     // Upstash turns an all-digit member like "966500000001" back into a number: keep ids as strings.
     const waIds = (await this.kv.zrange<unknown[]>(`${this.p}convs`, 0, scan - 1, { rev: true })).map(String);
-    const out: Conversation[] = [];
+    if (!waIds.length) return [];
+    // One round trip for every name, then each chat's last message and window in parallel:
+    // a page of 200 chats used to cost 800+ Redis calls one after another.
+    const names = await this.kv.mget<unknown[]>(...waIds.map((id) => `${this.p}n:${id}`));
     const q = query?.toLowerCase().replace(/^\+/, "");
-    for (const waId of waIds) {
-      const name = (await this.kv.get<string>(`${this.p}n:${waId}`)) ?? undefined;
-      if (q && !waId.includes(q) && !(name ?? "").toLowerCase().includes(q)) continue;
-      const [last] = (await this.messages(waId, 1)).slice(-1);
-      const w = await this.window(waId, now);
-      out.push({ waId, name, lastAt: last?.timestamp ?? 0, last, ...w });
-      if (out.length >= limit) break;
-    }
-    return out;
+    const picked = waIds
+      .map((waId, i) => ({ waId, name: names[i] == null ? undefined : String(names[i]) }))
+      .filter((c) => !q || c.waId.includes(q) || (c.name ?? "").toLowerCase().includes(q))
+      .slice(0, limit);
+    return Promise.all(
+      picked.map(async ({ waId, name }) => {
+        const [last, w] = await Promise.all([this.lastMessage(waId), this.window(waId, now)]);
+        return { waId, name, lastAt: last?.timestamp ?? 0, last, ...w };
+      }),
+    );
+  }
+
+  /** The newest message still cached, reading a handful of ids rather than a page. */
+  private async lastMessage(waId: string): Promise<StoredMessage | undefined> {
+    const ids = await this.kv.zrange<string[]>(`${this.p}c:${waId}`, 0, 4, { rev: true });
+    if (!ids.length) return undefined;
+    const rows = await this.kv.mget<(StoredMessage | null)[]>(...ids.map((id) => `${this.p}m:${id}`));
+    return rows.find((m): m is StoredMessage => !!m && !!m.waId) ?? (await this.messages(waId, 1))[0];
+  }
+
+  /** How many chats are cached, up to max, in one call. */
+  async countConversations(max = 200): Promise<number> {
+    return (await this.kv.zrange<unknown[]>(`${this.p}convs`, 0, max - 1)).length;
   }
 
   /** Substring search over the most recent messages of the most recent chats. */

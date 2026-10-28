@@ -183,8 +183,8 @@ export function registerTools(server: McpServer, { graph, store, canSend = true 
     },
     async () => {
       try {
-        const [phone, profile, convs] = await Promise.all([graph.phoneInfo(), graph.businessProfile(), store.conversations(100)]);
-        return json({ phone, profile: (profile as any)?.data?.[0] ?? profile, cachedConversations: convs.length });
+        const [phone, profile, convs] = await Promise.all([graph.phoneInfo(), graph.businessProfile(), store.countConversations(100)]);
+        return json({ phone, profile: (profile as any)?.data?.[0] ?? profile, cachedConversations: convs });
       } catch (e) {
         return fail(describeError(e));
       }

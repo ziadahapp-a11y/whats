@@ -112,8 +112,8 @@ export function registerPersonalTools(server: McpServer, ctx: PersonalCtx) {
         const { a } = p;
         const info = await isPaired(a.deps.raw);
         const last = await lastSync(a.deps.raw);
-        const chats = await a.deps.store.conversations(200);
-        out.push({ account: a.id, label: a.label, ...info, lastSync: last ? new Date(last * 1000).toISOString() : null, cachedChats: chats.length, hint: info.paired ? undefined : "Open /personal on this deployment to link this number." });
+        const chats = await a.deps.store.countConversations(200);
+        out.push({ account: a.id, label: a.label, ...info, lastSync: last ? new Date(last * 1000).toISOString() : null, cachedChats: chats, hint: info.paired ? undefined : "Open /personal on this deployment to link this number." });
       }
       return json(out.length === 1 ? out[0] : out);
     },
