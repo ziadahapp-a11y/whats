@@ -68,10 +68,8 @@ export async function POST(req: Request) {
       }
       case "media": {
         if (!t.sendMedia) return err("إرفاق الملفات متاح للرقم الرسمي فقط.", 400);
-        const f = b.file ?? {};
         const chat = t.resolve(String(b.to ?? b.chat ?? ""));
-        const file = { url: String(f.url ?? ""), mime: String(f.mime ?? ""), name: String(f.name ?? "file").slice(0, 200), size: Number(f.size) || 0, caption: String(b.text ?? "").slice(0, 1024) };
-        return Response.json({ sent: true, id: await t.sendMedia(chat, file, b.replyTo || undefined) });
+        return Response.json({ sent: true, id: await t.sendMedia(chat, String(b.upload ?? ""), String(b.text ?? "").slice(0, 1024), b.replyTo || undefined) });
       }
       case "react":
         await t.react(t.resolve(String(b.chat ?? "")), String(b.messageId ?? ""), String(b.emoji ?? ""));

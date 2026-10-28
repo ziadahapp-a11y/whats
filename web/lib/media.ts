@@ -35,13 +35,3 @@ export function mediaProblem(mime: string, size: number): string | null {
   if (size > max) return `${kind === "image" ? "الصورة" : "الملف"} أكبر من ${max / MB} ميقا.`;
   return null;
 }
-
-/** Meta fetches the file itself, so only our own Blob store's public URLs are sent. */
-export const isBlobUrl = (url: string) => {
-  try {
-    const u = new URL(url);
-    return u.protocol === "https:" && u.hostname.endsWith(".public.blob.vercel-storage.com");
-  } catch {
-    return false;
-  }
-};

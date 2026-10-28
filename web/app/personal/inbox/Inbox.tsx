@@ -2,12 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call, errMsg, invalidate, useApi, useSession, type Status } from "../shared";
-import { upload } from "@vercel/blob/client";
 import { mediaKind, mediaProblem } from "@/lib/media";
+import { PIECE_BYTES } from "@/lib/upload";
 import { Select } from "../Select";
 
 type Chat = { waId: string; name?: string; lastAt: number; last?: { text: string; direction: "in" | "out"; type: string }; group: boolean; windowOpen?: boolean; tags: string[]; drafts: number };
-type Msg = { id: string; waId: string; direction: "in" | "out"; type: string; text?: string; caption?: string; filename?: string; url?: string; timestamp: number; status?: string; replyTo?: string; sender?: string; senderName?: string; reaction?: { emoji: string } };
+type Msg = { id: string; waId: string; direction: "in" | "out"; type: string; text?: string; caption?: string; filename?: string; timestamp: number; status?: string; replyTo?: string; sender?: string; senderName?: string; reaction?: { emoji: string } };
 type Account = { id: string; label: string; kind: "personal" | "official" };
 type Draft = { id: string; account: string; accountLabel?: string; flowName: string; chat: string; chatName?: string; text: string; replyTo?: string; about?: { id: string; text?: string; who?: string }; createdAt: number };
 
@@ -116,17 +116,18 @@ function App({ secret, status }: { secret: string; status: Status }) {
     setBusy("send");
     try {
       if (attach) {
-        // Straight from the browser to Vercel Blob (no 4.5 MB function limit); Meta then fetches it by URL.
-        setProgress(0);
-        const blob = await upload(`inbox/${attach.name}`, attach, {
-          access: "public",
-          handleUploadUrl: "/api/personal/upload",
-          clientPayload: mediaKind(attach.type) ?? "",
-          headers: { Authorization: `Bearer ${secret}` },
-          multipart: attach.size > 5 * 1024 * 1024,
-          onUploadProgress: (p) => setProgress(Math.round(p.percentage)),
-        });
-        await call(secret, "/api/personal/inbox", { body: { op: "media", account, chat: to, text: body, replyTo: reply?.id, file: { url: blob.url, mime: attach.type, name: attach.name, size: attach.size } } });
+        // In 2 MB pieces (a function takes at most 4.5 MB per request); the server then hands Meta the whole file.
+        const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, "0")).join("");
+        const pieces = Math.max(1, Math.ceil(attach.size / PIECE_BYTES));
+        setProgress(1);
+        for (let i = 0; i < pieces; i++) {
+          const q = new URLSearchParams({ id, piece: String(i) });
+          if (i === 0) for (const [k, v] of Object.entries({ name: attach.name, mime: attach.type, size: String(attach.size), pieces: String(pieces) })) q.set(k, v);
+          const r = await fetch(`/api/personal/upload?${q}`, { method: "POST", headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/octet-stream" }, body: attach.slice(i * PIECE_BYTES, (i + 1) * PIECE_BYTES) });
+          if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+          setProgress(Math.round(((i + 1) / pieces) * 100));
+        }
+        await call(secret, "/api/personal/inbox", { body: { op: "media", account, chat: to, text: body, replyTo: reply?.id, upload: id } });
       } else {
         await call(secret, "/api/personal/inbox", { body: { op: "send", account, chat: to, text: body, replyTo: reply?.id } });
       }
@@ -301,7 +302,7 @@ function App({ secret, status }: { secret: string; status: Status }) {
                       {body}
                       {["image", "video", "audio", "document", "sticker"].includes(m.type) && (
                         <div className="muted">
-                          {m.url ? <a href={m.url} target="_blank" rel="noopener noreferrer">[{m.type}{m.filename ? `: ${m.filename}` : ""}]</a> : `[${m.type}${m.filename ? `: ${m.filename}` : ""}]`}
+                          [{m.type}{m.filename ? `: ${m.filename}` : ""}]
                         </div>
                       )}
                       <div className="meta">

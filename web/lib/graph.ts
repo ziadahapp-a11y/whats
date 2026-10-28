@@ -71,6 +71,23 @@ export class Graph {
     return { messageId: data.messages?.[0]?.id ?? "", waId: data.contacts?.[0]?.wa_id };
   }
 
+  /** POST /{phone-number-id}/media: hands Meta the file itself and returns its media id. */
+  async uploadMedia(bytes: Buffer, mime: string, name: string): Promise<string> {
+    if (!this.cfg.accessToken) throw new GraphError("WHATSAPP_ACCESS_TOKEN is not set", 500);
+    const form = new FormData();
+    form.set("messaging_product", "whatsapp");
+    form.set("type", mime);
+    form.set("file", new Blob([new Uint8Array(bytes)], { type: mime }), name);
+    const res = await this.fetchImpl(new URL(`${this.base()}/${this.cfg.phoneNumberId}/media`), {
+      method: "POST",
+      headers: { Authorization: `Bearer ${this.cfg.accessToken}` },
+      body: form,
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || data?.error || !data?.id) throw new GraphError(data?.error?.message ?? res.statusText, res.status, data?.error?.code);
+    return String(data.id);
+  }
+
   /** Marks an inbound message (and everything before it) as read; optionally shows "typing…". */
   async markRead(messageId: string, typing = false) {
     return this.call(`/${this.cfg.phoneNumberId}/messages`, {

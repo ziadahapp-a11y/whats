@@ -14,7 +14,6 @@ export type StoredMessage = {
   mediaId?: string;
   mime?: string;
   filename?: string;
-  url?: string; // outbound attachments: where the file lives (Vercel Blob)
   timestamp: number; // unix seconds
   status?: string; // outbound: sent | delivered | read | failed
   error?: string;
