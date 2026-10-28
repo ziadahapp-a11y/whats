@@ -69,11 +69,59 @@ export function toStored(raw: any, waId: string, direction: "in" | "out", source
   return m;
 }
 
-export type IngestStats = { messages: number; statuses: number; echoes: number; /** inbound messages we had never seen, for flows */ fresh: StoredMessage[] };
+/** Whole-message replies that opt a customer out of marketing. Compared after foldText, so spelling variants match. */
+const OPT_OUT_WORDS = ["إيقاف", "ايقاف", "توقف", "إلغاء", "الغاء", "STOP", "UNSUBSCRIBE"];
+
+/** Lowercases, drops Arabic diacritics and tatweel, unifies alef forms and strips punctuation and emoji. */
+function foldText(s: string): string {
+  return s
+    .normalize("NFKC")
+    .toLowerCase()
+    .replace(/[ً-ٰٟـ]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+const OPT_OUT_SET = new Set(OPT_OUT_WORDS.map(foldText));
+
+// Meta's delivery error when a customer chose "stop receiving marketing messages" in WhatsApp itself.
+const META_MARKETING_STOP = 131050;
+
+/**
+ * Whether an inbound message is a request to stop marketing: the entire text
+ * (or button title) must be one of the opt-out words, so "don't stop sending
+ * offers" does not count.
+ */
+export function optOutVia(m: Pick<StoredMessage, "direction" | "type" | "text">): "keyword" | "button" | null {
+  if (m.direction !== "in" || !m.text) return null;
+  if (m.type !== "text" && m.type !== "button" && m.type !== "interactive") return null;
+  if (!OPT_OUT_SET.has(foldText(m.text))) return null;
+  return m.type === "text" ? "keyword" : "button";
+}
+
+export type OptOutEvent = {
+  waId: string;
+  /** "message": the customer wrote or tapped stop, so a confirmation reply is possible. "meta": delivery failed with 131050, nothing can be sent. */
+  via: "message" | "meta";
+};
+
+export type IngestStats = {
+  messages: number;
+  statuses: number;
+  echoes: number;
+  /** inbound messages we had never seen, for flows */
+  fresh: StoredMessage[];
+  /** customers newly marked as opted out by this webhook */
+  optOuts: OptOutEvent[];
+};
+
+const isPhone = (s: unknown): s is string => typeof s === "string" && /^\d{7,15}$/.test(s);
 
 /** Applies a full webhook body to the store. Unknown fields are ignored. */
 export async function ingest(body: any, store: Store, phoneNumberId?: string): Promise<IngestStats> {
-  const stats: IngestStats = { messages: 0, statuses: 0, echoes: 0, fresh: [] };
+  const stats: IngestStats = { messages: 0, statuses: 0, echoes: 0, fresh: [], optOuts: [] };
   if (body?.object !== "whatsapp_business_account") return stats;
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -86,13 +134,21 @@ export async function ingest(body: any, store: Store, phoneNumberId?: string): P
         for (const raw of v.messages ?? []) {
           const m = toStored(raw, raw.from, "in", "api");
           const isNew = !(await store.getMessage(m.id));
+          // Record the opt-out before saving the message: if saving fails Meta redelivers, and isNew is still true then.
+          const via = isNew && isPhone(m.waId) ? optOutVia(m) : null;
+          if (via) await store.recordOptOut(m.waId, `replied stop (${via})`, m.timestamp * 1000);
           await store.saveMessage(m);
           if (isNew) stats.fresh.push(m);
+          if (via) stats.optOuts.push({ waId: m.waId, via: "message" });
           stats.messages++;
         }
         for (const s of v.statuses ?? []) {
           const err = s.errors?.[0];
           await store.updateStatus(s.id, s.status, err ? `${err.code}: ${err.title ?? err.message ?? ""}`.trim() : undefined);
+          if (Number(err?.code) === META_MARKETING_STOP && isPhone(s.recipient_id)) {
+            await store.recordOptOut(s.recipient_id, "meta: customer stopped marketing messages (131050)", Number(s.timestamp) * 1000 || Date.now());
+            stats.optOuts.push({ waId: s.recipient_id, via: "meta" });
+          }
           stats.statuses++;
         }
       }

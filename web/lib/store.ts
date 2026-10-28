@@ -39,11 +39,15 @@ export interface KV {
   get<T>(key: string): Promise<T | null>;
   set(key: string, value: unknown, opts?: { ex?: number }): Promise<unknown>;
   zadd(key: string, member: { score: number; member: string }): Promise<unknown>;
-  zrange<T = string[]>(key: string, start: number, stop: number, opts?: { rev?: boolean }): Promise<T>;
+  /** Rank range by default; with byScore, start/stop are scores (numbers, "-inf" or "+inf") and rev is not supported. */
+  zrange<T = string[]>(key: string, start: number | string, stop: number | string, opts?: { rev?: boolean; byScore?: boolean }): Promise<T>;
   zremrangebyrank(key: string, start: number, stop: number): Promise<unknown>;
   mget<T extends unknown[]>(...keys: string[]): Promise<T>;
 }
 
+type OptOut = { at: number; reason: string; active: boolean };
+
+const MGET_CHUNK = 500;
 const WINDOW_SECONDS = 24 * 60 * 60;
 const PER_CHAT_CAP = 50_000;
 const TTL_SECONDS = 3 * 365 * 24 * 60 * 60; // keep message bodies for 3 years
@@ -154,6 +158,73 @@ export class Store {
     }
     return hits.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
   }
+
+  // -- Marketing campaigns ---------------------------------------------------
+  // State the campaign preflight reads. Keys live under "mk:" and never touch
+  // the message cache. Phones are normalised digits (966…); times are ms.
+
+  private mkPhone(phone: string) {
+    if (!/^\d{7,15}$/.test(phone)) throw new Error(`"${phone}" is not a normalised phone number (7 to 15 digits, no "+" or spaces)`);
+    return phone;
+  }
+
+  private async mgetAll<T>(keys: string[]): Promise<(T | null)[]> {
+    const out: (T | null)[] = [];
+    for (let i = 0; i < keys.length; i += MGET_CHUNK) out.push(...(await this.kv.mget<(T | null)[]>(...keys.slice(i, i + MGET_CHUNK))));
+    return out;
+  }
+
+  /** Marks a number as opted out (it replied "stop", blocked us, or asked by hand). */
+  async recordOptOut(phone: string, reason: string, at = Date.now()) {
+    const p = this.mkPhone(phone);
+    await this.kv.set(`${this.p}mk:out:${p}`, { at, reason, active: true } satisfies OptOut);
+    await this.kv.zadd(`${this.p}mk:outs`, { score: at, member: p });
+  }
+
+  /** Records that the person asked to receive messages again; the opt-out history stays. */
+  async recordOptIn(phone: string, at = Date.now()) {
+    const p = this.mkPhone(phone);
+    const prev = await this.kv.get<OptOut>(`${this.p}mk:out:${p}`);
+    if (prev) await this.kv.set(`${this.p}mk:out:${p}`, { ...prev, at, active: false });
+  }
+
+  /** Which of these numbers are currently opted out. */
+  async optedOut(phones: readonly string[]): Promise<Set<string>> {
+    const rows = await this.mgetAll<OptOut>(phones.map((p) => `${this.p}mk:out:${this.mkPhone(p)}`));
+    return new Set(phones.filter((_, i) => rows[i]?.active));
+  }
+
+  /** Every number currently opted out, most recent first. */
+  async optOuts(): Promise<{ phone: string; at: number; reason: string }[]> {
+    const phones = (await this.kv.zrange<unknown[]>(`${this.p}mk:outs`, 0, -1, { rev: true })).map(String);
+    const rows = await this.mgetAll<OptOut>(phones.map((p) => `${this.p}mk:out:${p}`));
+    return phones.flatMap((phone, i) => (rows[i]?.active ? [{ phone, at: rows[i]!.at, reason: rows[i]!.reason }] : []));
+  }
+
+  /** Notes that a marketing message went to this number, for the cooldown and the 24-hour capacity count. */
+  async recordMarketingSend(phone: string, at = Date.now()) {
+    const p = this.mkPhone(phone);
+    await this.kv.set(`${this.p}mk:last:${p}`, at);
+    await this.kv.zadd(`${this.p}mk:recent`, { score: at, member: p });
+  }
+
+  /** When each of these numbers last received a marketing message; numbers never messaged are absent. */
+  async lastMarketing(phones: readonly string[]): Promise<Map<string, number>> {
+    const rows = await this.mgetAll<number>(phones.map((p) => `${this.p}mk:last:${this.mkPhone(p)}`));
+    const out = new Map<string, number>();
+    phones.forEach((p, i) => {
+      const at = rows[i];
+      if (typeof at === "number") out.set(p, at);
+    });
+    return out;
+  }
+
+  /** Numbers that received a marketing message within the window (default 24 hours), for the messaging-limit count. */
+  async recentMarketing(withinMs = 24 * 60 * 60 * 1000, now = Date.now()): Promise<Set<string>> {
+    // Members come back as numbers when Upstash auto-deserialises digit strings.
+    const phones = await this.kv.zrange<unknown[]>(`${this.p}mk:recent`, now - withinMs, "+inf", { byScore: true });
+    return new Set(phones.map(String));
+  }
 }
 
 /** In-memory KV used by tests and local development without Redis. */
@@ -179,11 +250,19 @@ export class MemoryKV implements KV {
     this.zsets.get(key)!.set(member, score);
     return 1;
   }
-  async zrange<T = string[]>(key: string, start: number, stop: number, opts?: { rev?: boolean }) {
+  async zrange<T = string[]>(key: string, start: number | string, stop: number | string, opts?: { rev?: boolean; byScore?: boolean }) {
+    if (opts?.byScore) {
+      const bound = (v: number | string) => (v === "-inf" ? -Infinity : v === "+inf" ? Infinity : Number(v));
+      return this.sorted(key)
+        .filter(([, score]) => score >= bound(start) && score <= bound(stop))
+        .map(([m]) => m) as T;
+    }
     let s = this.sorted(key).map(([m]) => m);
     if (opts?.rev) s = s.reverse();
-    const end = stop < 0 ? s.length + stop : stop;
-    return s.slice(start, end + 1) as T;
+    const from = Number(start);
+    const to = Number(stop);
+    const end = to < 0 ? s.length + to : to;
+    return s.slice(from, end + 1) as T;
   }
   async zremrangebyrank(key: string, start: number, stop: number) {
     const s = this.sorted(key);

@@ -1,6 +1,7 @@
 // Thin client for the official WhatsApp Cloud API (Meta Graph API).
 
 import type { Config } from "./config";
+import type { TemplateInfo } from "./preflight";
 
 export class GraphError extends Error {
   constructor(
@@ -79,16 +80,54 @@ export class Graph {
     });
   }
 
-  async listTemplates(status?: string, limit = 50) {
+  private waba() {
     if (!this.cfg.wabaId) throw new GraphError("WHATSAPP_WABA_ID is not set", 500);
+    return this.cfg.wabaId;
+  }
+
+  async listTemplates(status?: string, limit = 50) {
     const query: Record<string, string> = { fields: "name,status,language,category,components", limit: String(limit) };
     if (status) query.status = status;
-    return this.call<{ data: unknown[] }>(`/${this.cfg.wabaId}/message_templates`, { query });
+    return this.call<{ data: unknown[] }>(`/${this.waba()}/message_templates`, { query });
+  }
+
+  /** Submits a template for review; the body comes from compileTemplate(). Meta replies with status PENDING. */
+  async createTemplate(payload: Record<string, unknown>) {
+    return this.call<{ id: string; status: string; category: string }>(`/${this.waba()}/message_templates`, { body: payload });
+  }
+
+  /** One template by exact name (and language when given), with review status, quality and any rejection reason. */
+  async getTemplate(name: string, language?: string) {
+    const res = await this.call<{ data: any[] }>(`/${this.waba()}/message_templates`, {
+      query: { name, fields: "id,name,status,language,category,components,quality_score,rejected_reason", limit: "50" },
+    });
+    // Meta's name filter is a substring match, so keep the exact name only.
+    return res.data.find((t) => t.name === name && (!language || t.language === language)) ?? null;
+  }
+
+  /** The template as the campaign preflight reads it, or null when it does not exist. */
+  async getTemplateInfo(name: string, language: string): Promise<TemplateInfo | null> {
+    const t = await this.getTemplate(name, language);
+    if (!t) return null;
+    const body = (t.components ?? []).find((c: any) => c.type === "BODY");
+    const paramCount = new Set([...String(body?.text ?? "").matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1])).size;
+    return { name: t.name, language: t.language, status: t.status, category: t.category, quality: t.quality_score?.score, paramCount };
+  }
+
+  /** Deletes every language version of the template with this name. */
+  async deleteTemplate(name: string) {
+    return this.call<{ success: boolean }>(`/${this.waba()}/message_templates`, { method: "DELETE", query: { name } });
+  }
+
+  /** Registers the number on the Cloud API. The 6-digit PIN becomes its two-step verification PIN: keep it. */
+  async registerPhone(pin: string) {
+    if (!/^\d{6}$/.test(pin)) throw new Error("The PIN must be exactly 6 digits.");
+    return this.call<{ success: boolean }>(`/${this.cfg.phoneNumberId}/register`, { body: { messaging_product: "whatsapp", pin } });
   }
 
   async phoneInfo() {
     return this.call(`/${this.cfg.phoneNumberId}`, {
-      query: { fields: "display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput,messaging_limit_tier" },
+      query: { fields: "display_phone_number,verified_name,quality_rating,code_verification_status,platform_type,throughput,messaging_limit_tier,status,name_status" },
     });
   }
 
