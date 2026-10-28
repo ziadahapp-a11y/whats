@@ -123,7 +123,7 @@ export function lintTemplate(draft: TemplateDraft): TemplateIssue[] {
   if (unique.length > 0) {
     if (examples.length !== unique.length) error("bodyExamples", `Provide ${unique.length} example value(s), one per variable; got ${examples.length}.`);
     examples.forEach((ex, i) => {
-      if (typeof ex !== "string" || ex.trim() === "") error(`bodyExamples[${i}]`, "Example value is empty.");
+      if (typeof ex !== "string" || ex.trim() === "") error(`bodyExamples[${i}]`, "Example value is empty. (اكتب مثال لهذا المتغير، مثل: محمد)");
       else if (BAD_VALUE.test(ex)) error(`bodyExamples[${i}]`, "Example contains a newline, tab or 4+ consecutive spaces.");
     });
   } else if (examples.length > 0) {

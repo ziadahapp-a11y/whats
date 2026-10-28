@@ -429,6 +429,7 @@ function App({ secret }: { secret: string }) {
               </div>
             )}
             <textarea aria-label="نص الرسالة" rows={5} placeholder="هلا {{1}}، عندنا عرض خاص لك… استخدم الكود {{2}} عند الدفع." value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} />
+            {vars > 0 && <p className="hint">كل {"{{رقم}}"} في النص متغير تعبيه وقت الإرسال (مثل اسم العميل). Meta تطلب مثال لكل متغير عشان تراجع القالب بس، والمثال ما يوصل لأي عميل.</p>}
             {Array.from({ length: vars }, (_, i) => (
               <input key={i} aria-label={`مثال للمتغير ${i + 1}`} placeholder={`مثال للمتغير {{${i + 1}}}`} value={draft.examples[i] ?? ""} onChange={(e) => { const ex = [...draft.examples]; ex[i] = e.target.value; setDraft({ ...draft, examples: ex }); }} />
             ))}
