@@ -24,6 +24,8 @@ export type DraftHeader =
 
 export type TemplateDraft = {
   name: string;
+  /** Default MARKETING. UTILITY is for follow-ups on a customer's own request; Meta may re-categorise. */
+  category?: "MARKETING" | "UTILITY";
   /** Meta language code, e.g. "ar". */
   language: string;
   header?: DraftHeader;
@@ -187,7 +189,7 @@ export function lintTemplate(draft: TemplateDraft): TemplateIssue[] {
   }
 
   // marketing recipients can opt out; a visible way to do it lowers block and report rates
-  if (!buttons.some((b) => b.type === "QUICK_REPLY")) {
+  if ((draft.category ?? "MARKETING") === "MARKETING" && !buttons.some((b) => b.type === "QUICK_REPLY")) {
     warn("buttons", 'No quick-reply opt-out button (e.g. "إيقاف"); recommended for marketing to keep block and report rates down.');
   }
 
@@ -239,7 +241,7 @@ export function compileTemplate(input: TemplateDraft): CompileResult {
 
   return {
     ok: true,
-    payload: { name, language: draft.language, category: "MARKETING", components },
+    payload: { name, language: draft.language, category: draft.category === "UTILITY" ? "UTILITY" : "MARKETING", components },
     paramCount,
     warnings: issues,
   };

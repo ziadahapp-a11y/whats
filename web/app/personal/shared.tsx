@@ -34,6 +34,21 @@ export async function call<T = any>(secret: string, path: string, init: { method
   return d as T;
 }
 
+/** Sends a file to /api/personal/upload in 2 MB pieces (a function takes at most 4.5 MB) and returns its upload id. */
+export async function uploadPieces(secret: string, file: File | Blob, name: string, onProgress?: (percent: number) => void): Promise<string> {
+  const PIECE = 2 * 1024 * 1024; // lib/upload.ts PIECE_BYTES
+  const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (x) => x.toString(16).padStart(2, "0")).join("");
+  const pieces = Math.max(1, Math.ceil(file.size / PIECE));
+  for (let i = 0; i < pieces; i++) {
+    const q = new URLSearchParams({ id, piece: String(i) });
+    if (i === 0) for (const [k, v] of Object.entries({ name, mime: file.type, size: String(file.size), pieces: String(pieces) })) q.set(k, v);
+    const r = await fetch(`/api/personal/upload?${q}`, { method: "POST", headers: { Authorization: `Bearer ${secret}`, "Content-Type": "application/octet-stream" }, body: file.slice(i * PIECE, (i + 1) * PIECE) });
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error ?? `HTTP ${r.status}`);
+    onProgress?.(Math.round(((i + 1) / pieces) * 100));
+  }
+  return id;
+}
+
 export const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 export type Status = {

@@ -6,6 +6,8 @@ export type Config = {
   phoneNumberId: string;
   wabaId: string;
   appSecret: string;
+  /** Optional: Graph finds it from the token when unset. Needed for image headers on templates. */
+  appId: string;
   verifyToken: string;
   mcpSecret: string;
   graphVersion: string;
@@ -19,6 +21,7 @@ export function readConfig(env: Record<string, string | undefined> = process.env
     phoneNumberId: env.WHATSAPP_PHONE_NUMBER_ID ?? "",
     wabaId: env.WHATSAPP_WABA_ID ?? "",
     appSecret: env.META_APP_SECRET ?? "",
+    appId: env.META_APP_ID ?? "",
     verifyToken: env.WEBHOOK_VERIFY_TOKEN ?? "",
     mcpSecret: env.MCP_SECRET ?? "",
     graphVersion: env.GRAPH_API_VERSION || "v26.0",

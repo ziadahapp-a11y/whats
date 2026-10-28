@@ -1,5 +1,6 @@
 import { admin, err } from "@/lib/admin";
-import { target, targets } from "@/lib/inbox";
+import { sendableTemplates, target, targets } from "@/lib/inbox";
+import { runtime } from "@/lib/runtime";
 import { getTags } from "@/lib/flows/engine";
 import { listDrafts } from "@/lib/flows/storage";
 import { lastSync } from "@/lib/wa/session";
@@ -15,6 +16,10 @@ export async function GET(req: Request) {
   const t = await target(a, p.get("account"));
   if (!t) return err("Unknown number.", 404);
   try {
+    if (p.get("view") === "templates") {
+      if (t.kind !== "official") return Response.json({ templates: [] });
+      return Response.json({ templates: sendableTemplates((await runtime().graph.listTemplates("APPROVED", 100)).data) });
+    }
     if (p.get("view") === "messages") {
       const chat = p.get("chat") ?? "";
       if (!chat) return err("chat is required", 400);
@@ -70,6 +75,13 @@ export async function POST(req: Request) {
         if (!t.sendMedia) return err("إرفاق الملفات متاح للرقم الرسمي فقط.", 400);
         const chat = t.resolve(String(b.to ?? b.chat ?? ""));
         return Response.json({ sent: true, id: await t.sendMedia(chat, String(b.upload ?? ""), String(b.text ?? "").slice(0, 1024), b.replyTo || undefined) });
+      }
+      case "template": {
+        if (!t.sendTemplate) return err("القوالب متاحة للرقم الرسمي فقط.", 400);
+        const chat = t.resolve(String(b.to ?? b.chat ?? ""));
+        const params = Array.isArray(b.params) ? b.params.map((x: unknown) => String(x ?? "").trim()) : [];
+        if (params.some((x: string) => !x || /[\r\n\t]| {4,}/.test(x))) return err("عبّ كل المتغيرات، وبدون أسطر جديدة أو مسافات طويلة (شرط ميتا).", 400);
+        return Response.json({ sent: true, id: await t.sendTemplate(chat, { name: String(b.name ?? ""), language: String(b.language ?? "ar"), params, body: String(b.body ?? ""), headerUpload: b.headerUpload ? String(b.headerUpload) : undefined }) });
       }
       case "react":
         await t.react(t.resolve(String(b.chat ?? "")), String(b.messageId ?? ""), String(b.emoji ?? ""));

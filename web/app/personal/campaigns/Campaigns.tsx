@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { call, errMsg, invalidate, useApi, useSession } from "../shared";
+import { call, errMsg, invalidate, uploadPieces, useApi, useSession } from "../shared";
+import { SUGGESTED_TEMPLATES, type SuggestedTemplate } from "@/lib/suggested-templates";
 import { State } from "../State";
 
 type Check = { id: string; ok: boolean; message: string };
@@ -73,7 +74,7 @@ export function Campaigns() {
   return <App secret={secret} />;
 }
 
-const emptyDraft = { name: "", language: "ar", header: "", body: "", examples: [] as string[], footer: "", optOut: true, urlText: "", url: "", urlExample: "" };
+const emptyDraft = { name: "", language: "ar", category: "MARKETING" as "MARKETING" | "UTILITY", header: "", body: "", examples: [] as string[], footer: "", optOut: true, urlText: "", url: "", urlExample: "" };
 
 function App({ secret }: { secret: string }) {
   const overview = useApi<Overview>("/api/personal/campaigns", { fresh: 10_000, poll: 30_000 });
@@ -91,6 +92,18 @@ function App({ secret }: { secret: string }) {
   const [now, setNow] = useState(() => Date.now());
   const [draft, setDraft] = useState(emptyDraft);
   const [tplResult, setTplResult] = useState<TplResult | null>(null);
+  const [headerImg, setHeaderImg] = useState<File | null>(null);
+
+  // Fills the form from a ready-made template; its sample header image comes from /public.
+  async function fillSuggested(t: SuggestedTemplate) {
+    setTplResult(null);
+    setDraft({ ...emptyDraft, name: t.name, category: t.category, body: t.body, examples: t.examples, footer: t.footer ?? "", optOut: !!t.optOut, urlText: t.urlText ?? "", url: t.url ?? "" });
+    setHeaderImg(null);
+    if (t.image) {
+      const blob = await (await fetch(t.image)).blob();
+      setHeaderImg(new File([blob], t.image.split("/").pop()!, { type: blob.type || "image/png" }));
+    }
+  }
 
   const live = data?.campaigns.find((c) => LIVE.includes(c.status));
   const current = active ?? live ?? null;
@@ -178,7 +191,8 @@ function App({ secret }: { secret: string }) {
     return {
       name: draft.name,
       language: draft.language,
-      ...(draft.header.trim() ? { header: { type: "TEXT", text: draft.header } } : {}),
+      category: draft.category,
+      ...(draft.header.trim() && !headerImg ? { header: { type: "TEXT", text: draft.header } } : {}),
       body: draft.body,
       bodyExamples: Array.from({ length: vars }, (_, i) => draft.examples[i] ?? ""),
       ...(draft.footer.trim() ? { footer: draft.footer } : {}),
@@ -382,8 +396,18 @@ function App({ secret }: { secret: string }) {
           </section>
 
           <section className="card">
-            <h3>قالب تسويقي جديد</h3>
+            <h3>قالب جديد</h3>
             <p className="hint">نفحصه بقواعد Meta قبل ما نرسله. الاعتماد قرار Meta (دقائق إلى يوم)، والفحص النظيف ما يضمنه.</p>
+            <p className="label">قوالب جاهزة لزيادة</p>
+            <div className="actions" style={{ flexWrap: "wrap", marginBottom: 12 }}>
+              {SUGGESTED_TEMPLATES.map((t) => (
+                <button key={t.name} type="button" className="btn ghost small" disabled={!!busy} onClick={() => run("suggest", () => fillSuggested(t))}>{t.title}</button>
+              ))}
+            </div>
+            <select aria-label="الفئة" value={draft.category} onChange={(e) => setDraft({ ...draft, category: e.target.value as "MARKETING" | "UTILITY", optOut: e.target.value === "MARKETING" })}>
+              <option value="MARKETING">تسويق: عروض وإعلانات (يحتاج موافقة العميل)</option>
+              <option value="UTILITY">خدمات: متابعة طلب أو استفسار للعميل</option>
+            </select>
             <div className="grid2">
               <input dir="ltr" aria-label="اسم القالب" placeholder="summer_offer" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               <select aria-label="اللغة" value={draft.language} onChange={(e) => setDraft({ ...draft, language: e.target.value })}>
@@ -391,7 +415,19 @@ function App({ secret }: { secret: string }) {
                 <option value="en">English (en)</option>
               </select>
             </div>
-            <input aria-label="العنوان (اختياري)" placeholder="العنوان (اختياري، نص عادي بدون إيموجي)" value={draft.header} onChange={(e) => setDraft({ ...draft, header: e.target.value })} />
+            {headerImg ? (
+              <div className="quote">
+                رأس القالب صورة: {headerImg.name} <button type="button" className="tag" onClick={() => setHeaderImg(null)}>×</button>
+              </div>
+            ) : (
+              <div className="grid2">
+                <input aria-label="العنوان (اختياري)" placeholder="العنوان (اختياري، نص عادي بدون إيموجي)" value={draft.header} onChange={(e) => setDraft({ ...draft, header: e.target.value })} />
+                <label className="btn ghost small">
+                  أو صورة للرأس (JPG أو PNG)
+                  <input type="file" hidden accept="image/jpeg,image/png" onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) f.size > 5 * 1024 * 1024 ? setMsg({ ok: false, text: "الصورة أكبر من 5 ميقا." }) : setHeaderImg(f); }} />
+                </label>
+              </div>
+            )}
             <textarea aria-label="نص الرسالة" rows={5} placeholder="هلا {{1}}، عندنا عرض خاص لك… استخدم الكود {{2}} عند الدفع." value={draft.body} onChange={(e) => setDraft({ ...draft, body: e.target.value })} />
             {Array.from({ length: vars }, (_, i) => (
               <input key={i} aria-label={`مثال للمتغير ${i + 1}`} placeholder={`مثال للمتغير {{${i + 1}}}`} value={draft.examples[i] ?? ""} onChange={(e) => { const ex = [...draft.examples]; ex[i] = e.target.value; setDraft({ ...draft, examples: ex }); }} />
@@ -403,17 +439,19 @@ function App({ secret }: { secret: string }) {
               <input dir="ltr" aria-label="رابط الزر" placeholder="https://example.com/shop" value={draft.url} onChange={(e) => setDraft({ ...draft, url: e.target.value })} />
             </div>
             <div className="actions" style={{ marginTop: 12 }}>
-              <button className="btn ghost" disabled={!!busy || !draft.name || !draft.body} onClick={() => run("tplcheck", async () => setTplResult(await post<TplResult>({ op: "template", draft: buildDraft(), submit: false })))}>{busy === "tplcheck" ? "نفحص…" : "افحص فقط"}</button>
+              <button className="btn ghost" disabled={!!busy || !draft.name || !draft.body} onClick={() => run("tplcheck", async () => setTplResult(await post<TplResult>({ op: "template", draft: buildDraft(), submit: false, headerUpload: headerImg ? "check" : undefined })))}>{busy === "tplcheck" ? "نفحص…" : "افحص فقط"}</button>
               <button
                 className="btn solid"
                 disabled={!!busy || !draft.name || !draft.body}
                 onClick={() =>
                   confirm("نرسل القالب لـ Meta للمراجعة؟") &&
                   run("tplsubmit", async () => {
-                    const r = await post<TplResult>({ op: "template", draft: buildDraft(), submit: true });
+                    const headerUpload = headerImg ? await uploadPieces(secret, headerImg, headerImg.name) : undefined;
+                    const r = await post<TplResult>({ op: "template", draft: buildDraft(), submit: true, headerUpload });
                     setTplResult(r);
                     if (r.ok) {
                       setDraft(emptyDraft);
+                      setHeaderImg(null);
                       await refresh();
                     }
                   })

@@ -88,6 +88,26 @@ export class Graph {
     return String(data.id);
   }
 
+  /**
+   * Meta's resumable upload, for the sample image a template's IMAGE header must carry when it is
+   * submitted. Returns the handle ("4::...") that goes in example.header_handle.
+   */
+  async uploadHeaderHandle(bytes: Buffer, mime: string, name: string): Promise<string> {
+    const appId = this.cfg.appId || (await this.call<{ id: string }>("/app")).id;
+    const session = await this.call<{ id: string }>(`/${appId}/uploads`, {
+      method: "POST",
+      query: { file_name: name, file_length: String(bytes.length), file_type: mime },
+    });
+    const res = await this.fetchImpl(new URL(`${this.base()}/${session.id}`), {
+      method: "POST",
+      headers: { Authorization: `OAuth ${this.cfg.accessToken}`, file_offset: "0" },
+      body: new Uint8Array(bytes),
+    });
+    const data: any = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.h) throw new GraphError(data?.error?.message ?? res.statusText, res.status, data?.error?.code);
+    return String(data.h);
+  }
+
   /** Marks an inbound message (and everything before it) as read; optionally shows "typing…". */
   async markRead(messageId: string, typing = false) {
     return this.call(`/${this.cfg.phoneNumberId}/messages`, {

@@ -6,6 +6,7 @@ import { normalizeSaudiMobile } from "@/lib/preflight";
 import { RecipientsFileError } from "@/lib/recipients-file";
 import { runtime } from "@/lib/runtime";
 import type { TemplateDraft } from "@/lib/template-lint";
+import { dropUpload, loadUpload as loadPieces } from "@/lib/upload";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -93,6 +94,21 @@ export async function POST(req: Request) {
         const d = body.draft as TemplateDraft | undefined;
         if (!d || typeof d.name !== "string" || typeof d.language !== "string" || typeof d.body !== "string") return fail("The template needs a name, language and body.");
         if ((d.buttons ?? []).some((b) => typeof b?.text !== "string")) return fail("Every button needs text.");
+        // An IMAGE header: the sample image was uploaded in pieces from the page (lib/upload.ts).
+        if (body.headerUpload) {
+          const id = String(body.headerUpload);
+          if (body.submit !== true) d.header = { type: "IMAGE", handle: "checked-on-submit" };
+          else {
+            const img = await loadPieces(a.base, id);
+            if (!img) return fail("صورة الرأس ما وصلت كاملة أو انتهت صلاحيتها، اخترها مرة ثانية.");
+            try {
+              if (!["image/jpeg", "image/png"].includes(img.mime) || img.size > 5 * 1024 * 1024) return fail("صورة الرأس لازم JPG أو PNG وأقل من 5 ميقا.");
+              d.header = { type: "IMAGE", handle: await graph.uploadHeaderHandle(img.bytes, img.mime, img.name) };
+            } finally {
+              await dropUpload(a.base, id);
+            }
+          }
+        }
         const r = await submitTemplate(graph, d, body.submit === true);
         return Response.json(r);
       }

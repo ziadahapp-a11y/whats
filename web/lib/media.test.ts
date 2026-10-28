@@ -4,6 +4,9 @@ import { mediaKind, mediaProblem } from "./media";
 import { dropUpload, loadUpload, PIECE_BYTES, putPiece } from "./upload";
 import { MemoryRawKV } from "./wa/auth";
 import { Graph } from "./graph";
+import { sendableTemplates } from "./inbox";
+import { compileTemplate } from "./template-lint";
+import { SUGGESTED_TEMPLATES } from "./suggested-templates";
 
 const MB = 1024 * 1024;
 
@@ -47,4 +50,47 @@ test("uploadMedia posts the file to Meta and returns its id", async () => {
   assert.match(seen!.url, /\/PN1\/media$/);
   assert.equal(seen!.form.get("messaging_product"), "whatsapp");
   assert.equal((seen!.form.get("file") as File).name, "a.pdf");
+});
+
+test("the inbox offers approved templates with what each needs", () => {
+  const list = sendableTemplates([
+    { name: "a", language: "ar", status: "APPROVED", category: "UTILITY", components: [{ type: "BODY", text: "هلا {{1}}، طلبك {{2}} و{{1}}" }] },
+    { name: "b", language: "ar", status: "APPROVED", category: "MARKETING", components: [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "عرض" }] },
+    { name: "c", language: "ar", status: "PENDING", category: "MARKETING", components: [{ type: "BODY", text: "x" }] },
+    { name: "d", language: "ar", status: "APPROVED", category: "MARKETING", components: [{ type: "HEADER", format: "TEXT", text: "هلا {{1}}" }, { type: "BODY", text: "x" }] },
+  ]);
+  assert.deepEqual(list.map((t) => [t.name, t.params, t.header]), [["a", 2, null], ["b", 0, "IMAGE"]]);
+});
+
+test("utility templates compile as UTILITY without the opt-out warning", () => {
+  const r = compileTemplate({ name: "ziadah_case_update", language: "ar", category: "UTILITY", body: "هلا {{1}}، عندنا تحديث بخصوص طلبك.", bodyExamples: ["محمد"] });
+  assert.ok(r.ok);
+  assert.equal(r.ok && r.payload.category, "UTILITY");
+  assert.ok(r.ok && !r.warnings.some((w) => w.field === "buttons"));
+  const m = compileTemplate({ name: "x_offer", language: "ar", body: "هلا {{1}}، عندنا عرض خاص لك هذا الأسبوع.", bodyExamples: ["محمد"] });
+  assert.equal(m.ok && m.payload.category, "MARKETING");
+});
+
+test("every ready-made Ziadah template passes the checks", () => {
+  for (const t of SUGGESTED_TEMPLATES) {
+    const r = compileTemplate({
+      name: t.name, language: "ar", category: t.category, body: t.body, bodyExamples: t.examples, footer: t.footer,
+      ...(t.image ? { header: { type: "IMAGE" as const, handle: "h" } } : {}),
+      buttons: [...(t.optOut ? [{ type: "QUICK_REPLY" as const, text: "إيقاف" }] : []), ...(t.url ? [{ type: "URL" as const, text: t.urlText!, url: t.url }] : [])],
+    });
+    assert.ok(r.ok, `${t.name}: ${JSON.stringify(!r.ok && r.issues)}`);
+  }
+});
+
+test("uploadHeaderHandle runs Meta's resumable upload and returns the handle", async () => {
+  const calls: string[] = [];
+  const fake = (async (url: URL, init: RequestInit) => {
+    calls.push(`${init.method} ${url.pathname}${url.search}`);
+    if (url.pathname.endsWith("/APP1/uploads")) return new Response(JSON.stringify({ id: "upload:XYZ" }));
+    return new Response(JSON.stringify({ h: "4::HANDLE" }));
+  }) as unknown as typeof fetch;
+  const graph = new Graph({ accessToken: "t", phoneNumberId: "PN1", appId: "APP1", graphVersion: "v26.0" } as any, fake);
+  assert.equal(await graph.uploadHeaderHandle(Buffer.from("png"), "image/png", "a.png"), "4::HANDLE");
+  assert.match(calls[0], /POST \/v26\.0\/APP1\/uploads\?file_name=a\.png&file_length=3&file_type=image%2Fpng/);
+  assert.match(calls[1], /POST \/v26\.0\/upload:XYZ/);
 });
