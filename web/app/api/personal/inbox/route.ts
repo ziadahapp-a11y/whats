@@ -51,7 +51,7 @@ export async function GET(req: Request) {
   }
 }
 
-// Acting: { op: "send" | "react" | "read" | "sync" | "tag", account, ... }
+// Acting: { op: "send" | "media" | "react" | "read" | "sync" | "tag", account, ... }
 export async function POST(req: Request) {
   const a = await admin(req);
   if (a instanceof Response) return a;
@@ -65,6 +65,13 @@ export async function POST(req: Request) {
         if (!text) return err("text is required", 400);
         const chat = t.resolve(String(b.to ?? b.chat ?? ""));
         return Response.json({ sent: true, id: await t.send(chat, text.slice(0, 4096), b.replyTo || undefined) });
+      }
+      case "media": {
+        if (!t.sendMedia) return err("إرفاق الملفات متاح للرقم الرسمي فقط.", 400);
+        const f = b.file ?? {};
+        const chat = t.resolve(String(b.to ?? b.chat ?? ""));
+        const file = { url: String(f.url ?? ""), mime: String(f.mime ?? ""), name: String(f.name ?? "file").slice(0, 200), size: Number(f.size) || 0, caption: String(b.text ?? "").slice(0, 1024) };
+        return Response.json({ sent: true, id: await t.sendMedia(chat, file, b.replyTo || undefined) });
       }
       case "react":
         await t.react(t.resolve(String(b.chat ?? "")), String(b.messageId ?? ""), String(b.emoji ?? ""));

@@ -2,6 +2,7 @@
 
 import type { Admin } from "./admin";
 import { normalizePhone } from "./graph";
+import { isBlobUrl, mediaKind, mediaProblem } from "./media";
 import { runtime } from "./runtime";
 import type { Store } from "./store";
 import { listAccounts, OFFICIAL, scopeRaw } from "./wa/accounts";
@@ -19,6 +20,8 @@ export type Target = {
   state: RawKV;
   resolve(to: string): string;
   send(chat: string, text: string, replyTo?: string): Promise<string | undefined>;
+  /** Official number only: an image or document already uploaded to Vercel Blob. */
+  sendMedia?(chat: string, file: Attachment, replyTo?: string): Promise<string | undefined>;
   react(chat: string, messageId: string, emoji: string): Promise<void>;
   read(chat: string): Promise<number>;
   sync(): Promise<{ newMessages: number }>;
@@ -26,6 +29,8 @@ export type Target = {
   backfill?(reset?: boolean): Promise<BackfillProgress>;
   backfillStatus?(): Promise<{ done: number; added: number; finishedAt?: number } | null>;
 };
+
+export type Attachment = { url: string; mime: string; name: string; size: number; caption?: string };
 
 export const officialConfigured = (a: Admin) => !!a.cfg.accessToken && !!a.cfg.phoneNumberId;
 
@@ -51,6 +56,21 @@ export async function target(a: Admin, id: string | null | undefined): Promise<T
         if (!w.windowOpen) throw new Error("The 24-hour window is closed for this customer; only an approved template can be sent.");
         const res = await graph.sendMessage(chat, { type: "text", text: { body: text } }, replyTo);
         await store.saveMessage({ id: res.messageId, waId: chat, direction: "out", type: "text", text, timestamp: Math.floor(Date.now() / 1000), status: "sent", source: "api", replyTo });
+        return res.messageId;
+      },
+      sendMedia: async (chat, f, replyTo) => {
+        if (!isBlobUrl(f.url)) throw new Error("The attachment must be uploaded from the inbox first.");
+        const problem = mediaProblem(f.mime, f.size);
+        if (problem) throw new Error(problem);
+        const w = await store.window(chat);
+        if (!w.windowOpen) throw new Error("The 24-hour window is closed for this customer; only an approved template can be sent.");
+        const type = mediaKind(f.mime)!;
+        const caption = f.caption?.trim() || undefined;
+        const media: Record<string, string> = { link: f.url };
+        if (caption) media.caption = caption;
+        if (type === "document") media.filename = f.name;
+        const res = await graph.sendMessage(chat, { type, [type]: media }, replyTo);
+        await store.saveMessage({ id: res.messageId, waId: chat, direction: "out", type, caption, filename: f.name, mime: f.mime, url: f.url, timestamp: Math.floor(Date.now() / 1000), status: "sent", source: "api", replyTo });
         return res.messageId;
       },
       react: async (chat, messageId, emoji) => void (await graph.sendMessage(chat, { type: "reaction", reaction: { message_id: messageId, emoji } })),

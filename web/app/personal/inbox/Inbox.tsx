@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call, errMsg, invalidate, useApi, useSession, type Status } from "../shared";
+import { upload } from "@vercel/blob/client";
+import { mediaKind, mediaProblem } from "@/lib/media";
 import { Select } from "../Select";
 
 type Chat = { waId: string; name?: string; lastAt: number; last?: { text: string; direction: "in" | "out"; type: string }; group: boolean; windowOpen?: boolean; tags: string[]; drafts: number };
-type Msg = { id: string; waId: string; direction: "in" | "out"; type: string; text?: string; caption?: string; filename?: string; timestamp: number; status?: string; replyTo?: string; sender?: string; senderName?: string; reaction?: { emoji: string } };
+type Msg = { id: string; waId: string; direction: "in" | "out"; type: string; text?: string; caption?: string; filename?: string; url?: string; timestamp: number; status?: string; replyTo?: string; sender?: string; senderName?: string; reaction?: { emoji: string } };
 type Account = { id: string; label: string; kind: "personal" | "official" };
 type Draft = { id: string; account: string; accountLabel?: string; flowName: string; chat: string; chatName?: string; text: string; replyTo?: string; about?: { id: string; text?: string; who?: string }; createdAt: number };
 
@@ -40,6 +42,9 @@ function App({ secret, status }: { secret: string; status: Status }) {
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
   const [newTo, setNewTo] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [progress, setProgress] = useState(0);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [bf, setBf] = useState<{ running: boolean; line: string }>({ running: false, line: "" });
   const stopBf = useRef(false);
   const bottom = useRef<HTMLDivElement>(null);
@@ -94,32 +99,60 @@ function App({ secret, status }: { secret: string; status: Status }) {
     e.preventDefault();
     const to = active ?? newTo;
     const body = text.trim();
-    if (!body || !to) return;
+    const attach = active ? file : null;
+    if ((!body && !attach) || !to) return;
     const reply = replyTo;
     // Show the message at once; the server answer replaces it, a failure puts the text back.
     if (active) {
       threadApi.set((prev) => ({
         ...(prev ?? { tags: [], messages: [] }),
-        messages: [...(prev?.messages ?? []), { id: `tmp-${Date.now()}`, waId: to, direction: "out", type: "text", text: body, timestamp: Math.floor(Date.now() / 1000), status: "sending", replyTo: reply?.id }],
+        messages: [...(prev?.messages ?? []), { id: `tmp-${Date.now()}`, waId: to, direction: "out", type: attach ? mediaKind(attach.type) ?? "document" : "text", ...(attach ? { caption: body, filename: attach.name } : { text: body }), timestamp: Math.floor(Date.now() / 1000), status: "sending", replyTo: reply?.id }],
       }));
     }
     setText("");
     setReplyTo(null);
+    setFile(null);
     stick.current = true;
     setBusy("send");
     try {
-      await call(secret, "/api/personal/inbox", { body: { op: "send", account, chat: to, text: body, replyTo: reply?.id } });
+      if (attach) {
+        // Straight from the browser to Vercel Blob (no 4.5 MB function limit); Meta then fetches it by URL.
+        setProgress(0);
+        const blob = await upload(`inbox/${attach.name}`, attach, {
+          access: "public",
+          handleUploadUrl: "/api/personal/upload",
+          clientPayload: mediaKind(attach.type) ?? "",
+          headers: { Authorization: `Bearer ${secret}` },
+          multipart: attach.size > 5 * 1024 * 1024,
+          onUploadProgress: (p) => setProgress(Math.round(p.percentage)),
+        });
+        await call(secret, "/api/personal/inbox", { body: { op: "media", account, chat: to, text: body, replyTo: reply?.id, file: { url: blob.url, mime: attach.type, name: attach.name, size: attach.size } } });
+      } else {
+        await call(secret, "/api/personal/inbox", { body: { op: "send", account, chat: to, text: body, replyTo: reply?.id } });
+      }
       invalidate("/api/personal/inbox");
       if (!active) setNewTo("");
       await Promise.all([loadChats(), active ? loadThread(active) : undefined]);
     } catch (err) {
       setText(body);
       setReplyTo(reply);
+      if (attach) setFile(attach);
       say(errMsg(err));
       if (active) await loadThread(active);
     } finally {
       setBusy("");
+      setProgress(0);
     }
+  };
+
+  useEffect(() => setFile(null), [active, account]);
+
+  const pickFile = (f: File | undefined) => {
+    if (fileInput.current) fileInput.current.value = "";
+    if (!f) return;
+    const problem = mediaProblem(f.type, f.size);
+    if (problem) return say(problem);
+    setFile(f);
   };
 
   const sync = () =>
@@ -266,7 +299,11 @@ function App({ secret, status }: { secret: string; status: Status }) {
                       {m.direction === "in" && active!.endsWith("@g.us") && <div className="who">{m.senderName || (m.sender ? "+" + m.sender : "")}</div>}
                       {quoted && <div className="quote">{(quoted.text ?? quoted.caption ?? `[${quoted.type}]`).slice(0, 120)}</div>}
                       {body}
-                      {["image", "video", "audio", "document", "sticker"].includes(m.type) && <div className="muted">[{m.type}{m.filename ? `: ${m.filename}` : ""}]</div>}
+                      {["image", "video", "audio", "document", "sticker"].includes(m.type) && (
+                        <div className="muted">
+                          {m.url ? <a href={m.url} target="_blank" rel="noopener noreferrer">[{m.type}{m.filename ? `: ${m.filename}` : ""}]</a> : `[${m.type}${m.filename ? `: ${m.filename}` : ""}]`}
+                        </div>
+                      )}
                       <div className="meta">
                         <time>{new Date(m.timestamp * 1000).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}</time>
                         {m.direction === "out" && m.status && <span>{m.status === "read" ? "✓✓ قُرئت" : m.status === "delivered" ? "✓✓" : m.status === "failed" ? "فشل" : m.status === "sending" ? "…" : "✓"}</span>}
@@ -307,9 +344,20 @@ function App({ secret, status }: { secret: string; status: Status }) {
                     }
                   }}
                 />
+                {file && (
+                  <div className="quote">
+                    مرفق: {file.name} ({(file.size / 1024 / 1024).toFixed(1)} ميقا){text.trim() ? "، والنص يروح تعليق عليه" : ""} <button type="button" className="tag" onClick={() => setFile(null)}>×</button>
+                  </div>
+                )}
                 <div className="row">
-                  <span className="hint">{busy === "send" ? "يرسل… قد ياخذ بضع ثواني" : "تنرسل من رقمك الحقيقي فوراً"}</span>
-                  <button className="btn solid" disabled={!text.trim() || busy === "send"}>أرسل</button>
+                  {kind === "official" && (
+                    <>
+                      <input ref={fileInput} type="file" hidden accept=".jpg,.jpeg,.png,.pdf,.txt,.doc,.docx,.xls,.xlsx,.ppt,.pptx" onChange={(e) => pickFile(e.target.files?.[0])} />
+                      <button type="button" className="btn ghost small" title="إرفاق صورة أو ملف" onClick={() => fileInput.current?.click()} disabled={busy === "send"}>📎 إرفاق</button>
+                    </>
+                  )}
+                  <span className="hint">{busy === "send" ? (progress > 0 && progress < 100 ? `يرفع الملف… ${progress}%` : "يرسل… قد ياخذ بضع ثواني") : "تنرسل من رقمك الحقيقي فوراً"}</span>
+                  <button className="btn solid" disabled={(!text.trim() && !file) || busy === "send"}>أرسل</button>
                 </div>
               </form>
             </>

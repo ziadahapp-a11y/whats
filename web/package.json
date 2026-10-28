@@ -18,6 +18,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "^2.4.0",
     "@upstash/redis": "^1.40.0",
+    "@vercel/blob": "2.8.2",
     "@xyflow/react": "^12.12.0",
     "baileys": "^7.0.0-rc14",
     "exceljs": "^4.4.0",
