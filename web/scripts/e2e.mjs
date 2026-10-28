@@ -82,7 +82,8 @@ try {
   await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "1" } });
   const tools = (await mcp("tools/list", {})).data.result.tools.map((t) => t.name).sort();
   console.log("tools:", tools.join(", "));
-  assert.equal(tools.length, 12);
+  assert.equal(tools.length, 24);
+  for (const t of ["create_template", "campaign_dry_run", "campaign_start", "campaign_advance", "campaign_control", "campaign_report", "manage_opt_out", "list_opt_outs"]) assert.ok(tools.includes(t), t);
 
   const convs = await mcp("tools/call", { name: "list_conversations", arguments: {} });
   const convText = convs.data.result.content[0].text;
@@ -96,6 +97,30 @@ try {
 
   const search = await mcp("tools/call", { name: "search_messages", arguments: { query: "friday" } });
   assert.ok(search.data.result.content[0].text.includes("wamid.e2e"));
+
+  // Marketing: a customer's "stop" through the signed webhook opts them out; a campaign cannot pass its checks without Meta.
+  const call = async (name, args) => (await mcp("tools/call", { name, arguments: args })).data.result;
+  assert.equal((await call("list_opt_outs", {})).content[0].text.includes('"total": 0'), true);
+  const stopBody = JSON.stringify({
+    object: "whatsapp_business_account",
+    entry: [{ changes: [{ field: "messages", value: { metadata: { phone_number_id: "PN1" }, messages: [{ from: "966500000009", id: "wamid.e2e.stop", timestamp: String(ts + 5), type: "text", text: { body: "إيقاف" } }] } }] }],
+  });
+  r = await fetch(`${base}/api/webhook`, { method: "POST", body: stopBody, headers: { "X-Hub-Signature-256": "sha256=" + createHmac("sha256", env.META_APP_SECRET).update(stopBody).digest("hex") } });
+  assert.equal(r.status, 200);
+  const outs = JSON.parse((await call("list_opt_outs", {})).content[0].text);
+  assert.equal(outs.total, 1);
+  assert.equal(outs.optOuts[0].phone, "96650****009");
+  assert.ok(!JSON.stringify(outs).includes("966500000009"), "numbers are masked");
+
+  const dry = await call("campaign_dry_run", { template_name: "summer_offer", language: "ar", rows: [{ phone: "0500000001", consent_date: "2026-09-01", params: ["أحمد"] }] });
+  const dryOut = JSON.parse(dry.content[0].text);
+  assert.equal(dryOut.ok, false, "without Meta the number and template cannot be verified");
+  assert.equal(dryOut.campaignId, undefined);
+  assert.equal((await call("campaign_dry_run", { template_name: "x" })).isError, true, "needs an upload or rows");
+  const badStart = await call("campaign_start", { campaign_id: "nope", confirm_token: "nope" });
+  assert.equal(badStart.isError, true);
+  const tpl = await call("create_template", { name: "x", body: "{{1}} hello", body_examples: ["a"] });
+  assert.equal(tpl.isError, true, "a draft with errors is refused before anything is sent");
 
   // Personal mode (linked device): wiring, auth and Baileys loading, without a phone.
   r = await fetch(`${base}/api/personal/status`);
