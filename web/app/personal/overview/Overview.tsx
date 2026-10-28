@@ -4,6 +4,18 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import type { Overview as Data } from "@/lib/overview";
 import { call, errMsg, useApi, useSession, when } from "../shared";
+import { State } from "../State";
+
+// stat card icons, 24px stroke paths
+const ICO = {
+  in: "M12 4v12m0 0l-4-4m4 4l4-4M5 20h14",
+  chats: "M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 20a8 8 0 0116 0",
+  wait: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 7v5l3 2",
+  draft: "M4 20h4L19 9a2.8 2.8 0 00-4-4L4 16v4zM13.5 6.5l4 4",
+  runs: "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
+  error: "M12 21a9 9 0 100-18 9 9 0 000 18zM12 8v5M12 16h.01",
+  ai: "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z",
+};
 
 type Resp = Data & { flows: { total: number; enabled: number; paused: boolean }; ai: { configured: boolean; dailyCap: number } };
 
@@ -22,7 +34,8 @@ const until = (ms: number) => {
 
 export function Overview() {
   const api = useApi<Resp>("/api/personal/overview", { fresh: 20_000, poll: 30_000 });
-  const { secret } = useSession();
+  const { secret, status } = useSession();
+  const who = status.accounts.find((a) => a.paired);
   const [cancelling, setCancelling] = useState("");
   const [cancelError, setCancelError] = useState("");
   const d = api.data;
@@ -49,11 +62,23 @@ export function Overview() {
   if (!d) {
     return (
       <div className="page">
-        <Head onRefresh={api.reload} busy={api.loading} />
+        <Head onRefresh={api.reload} busy={api.loading} name={who?.name} />
         {api.error ? (
-          <div className="banner bad">{api.error}</div>
+          <State
+            tone="bad"
+            title="ما قدرنا نحمّل نظرة عامة"
+            actions={
+              <>
+                <button type="button" className="btn brand" onClick={() => void api.reload()}>جرّب مرة ثانية</button>
+                <Link className="btn white" href="/guide">دليل الإعداد</Link>
+              </>
+            }
+          >
+            ما وصلنا للسيرفر. تأكد من اتصالك وجرّب مرة ثانية. ما ضاع شي من إعداداتك. ({api.error})
+          </State>
         ) : (
           <>
+            <p className="loading-note">نحمّل نظرة عامة…</p>
             <div className="kpis">{Array.from({ length: 6 }, (_, i) => <div key={i} className="skel" style={{ height: 96 }} />)}</div>
             <div className="skel" style={{ height: 220 }} />
           </>
@@ -77,7 +102,7 @@ export function Overview() {
 
   return (
     <div className="page overview">
-      <Head onRefresh={api.reload} busy={api.loading} />
+      <Head onRefresh={api.reload} busy={api.loading} name={who?.name} />
 
       {alerts.length > 0 && (
         <div className="alerts" role="status">
@@ -86,15 +111,16 @@ export function Overview() {
       )}
 
       <div className="kpis">
-        <Kpi label="رسائل واردة" value={t.messagesIn} sub={`صادرة ${t.messagesOut}`} />
-        <Kpi label="محادثات نشطة" value={t.activeChats} sub={`${d.accounts.length} ${d.accounts.length === 1 ? "رقم" : "أرقام"}`} />
-        <Kpi label="تشغيلات تنتظر" value={t.waiting} sub={t.waiting ? "عند عقدة انتظار" : "ما فيه شي معلّق"} />
-        <Kpi label="مسودات تنتظرك" value={t.drafts} tone={t.drafts ? "warn" : undefined} href="/personal/inbox" sub={t.drafts ? "راجعها في الوارد" : "ما فيه شي معلّق"} />
-        <Kpi label="تشغيلات الفلوات" value={runs} href="/personal/flows?tab=log" sub={`تم ${t.runs.ok} · مسودة ${t.runs.draft}${t.runs.dry ? ` · تجربة ${t.runs.dry}` : ""}${t.runs.skipped ? ` · تخطّى ${t.runs.skipped}` : ""}`} />
-        <Kpi label="أخطاء الفلوات" value={t.runs.error} tone={t.runs.error ? "bad" : undefined} href="/personal/flows?tab=log" sub={t.runs.error ? "افتح السجل للتفاصيل" : "كل شي سليم"} />
+        <Kpi icon={ICO.in} label="رسائل واردة" value={t.messagesIn} sub={`صادرة ${t.messagesOut}`} />
+        <Kpi icon={ICO.chats} label="محادثات نشطة" value={t.activeChats} sub={`${d.accounts.length} ${d.accounts.length === 1 ? "رقم" : "أرقام"}`} />
+        <Kpi icon={ICO.wait} label="تشغيلات تنتظر" value={t.waiting} sub={t.waiting ? "عند عقدة انتظار" : "ما فيه شي معلّق"} />
+        <Kpi icon={ICO.draft} label="مسودات تنتظرك" value={t.drafts} tone={t.drafts ? "warn" : undefined} href="/personal/inbox" sub={t.drafts ? "راجعها في الوارد" : "ما فيه شي معلّق"} />
+        <Kpi icon={ICO.runs} label="تشغيلات الفلوات" value={runs} href="/personal/flows?tab=log" sub={`تم ${t.runs.ok} · مسودة ${t.runs.draft}${t.runs.dry ? ` · تجربة ${t.runs.dry}` : ""}${t.runs.skipped ? ` · تخطّى ${t.runs.skipped}` : ""}`} />
+        <Kpi icon={ICO.error} label="أخطاء الفلوات" value={t.runs.error} tone={t.runs.error ? "bad" : undefined} href="/personal/flows?tab=log" sub={t.runs.error ? "افتح السجل للتفاصيل" : "كل شي سليم"} />
         <div className="kpi">
-          <span className="kpi-label">الذكاء الاصطناعي اليوم</span>
+          <Ico d={ICO.ai} />
           <strong>{t.aiUsed}<small> / {d.ai.dailyCap}</small></strong>
+          <span className="kpi-label">الذكاء الاصطناعي اليوم</span>
           <div className="meter" aria-hidden="true"><span style={{ width: `${aiPct}%` }} /></div>
           <span className="kpi-sub">يبدأ العداد من جديد منتصف الليل بتوقيت UTC</span>
         </div>
@@ -168,19 +194,19 @@ export function Overview() {
       <section className="card">
         <h3>الأرقام</h3>
         <div className="table-scroll">
-          <table className="logtable">
+          <table className="logtable stack-table">
             <thead><tr><th>الرقم</th><th>الحالة</th><th>آخر مزامنة</th><th>محادثات نشطة</th><th>واردة / صادرة</th><th>مسودات</th><th>تنتظر</th><th>أخطاء</th></tr></thead>
             <tbody>
               {d.accounts.map((a) => (
                 <tr key={a.id}>
-                  <td><strong>{a.label}</strong></td>
-                  <td>{a.kind === "official" ? <span className="chip on">رسمي</span> : a.paired ? <span className="chip on">مربوط</span> : <span className="chip off">غير مربوط</span>}</td>
-                  <td>{a.kind === "official" ? "لحظي" : when(a.lastSync)}</td>
-                  <td>{a.activeChats}</td>
-                  <td>{a.messagesIn} / {a.messagesOut}</td>
-                  <td>{a.drafts}</td>
-                  <td>{a.waiting}</td>
-                  <td className={a.runs.error ? "err" : ""}>{a.runs.error}</td>
+                  <td data-label="الرقم"><strong>{a.label}</strong></td>
+                  <td data-label="الحالة">{a.kind === "official" ? <span className="chip on">رسمي</span> : a.paired ? <span className="chip on">مربوط</span> : <span className="chip off">غير مربوط</span>}</td>
+                  <td data-label="آخر مزامنة">{a.kind === "official" ? "لحظي" : when(a.lastSync)}</td>
+                  <td data-label="محادثات نشطة">{a.activeChats}</td>
+                  <td data-label="واردة / صادرة">{a.messagesIn} / {a.messagesOut}</td>
+                  <td data-label="مسودات">{a.drafts}</td>
+                  <td data-label="تنتظر">{a.waiting}</td>
+                  <td data-label="أخطاء" className={a.runs.error ? "err" : ""}>{a.runs.error}</td>
                 </tr>
               ))}
             </tbody>
@@ -191,23 +217,32 @@ export function Overview() {
   );
 }
 
-function Head({ onRefresh, busy }: { onRefresh: () => Promise<void>; busy: boolean }) {
+function Head({ onRefresh, busy, name }: { onRefresh: () => Promise<void>; busy: boolean; name?: string }) {
   return (
     <div className="page-head">
       <div>
-        <h2>نظرة عامة</h2>
-        <p className="intro">آخر 24 ساعة على كل أرقامك. تتحدث كل نص دقيقة تقريباً.</p>
+        <h2>{name ? `أهلاً بعودتك، ${name}` : "أهلاً بعودتك"}</h2>
+        <p className="intro">نظرة سريعة على نشاط أرقامك وفلواتك آخر 24 ساعة. تتحدث كل نص دقيقة تقريباً.</p>
       </div>
-      <button type="button" className="btn ghost" onClick={() => void onRefresh()} disabled={busy}>{busy ? "نحدّث…" : "حدّث الآن"}</button>
+      <button type="button" className="btn solid" onClick={() => void onRefresh()} disabled={busy}>{busy ? "نحدّث…" : "حدّث الآن"}</button>
     </div>
   );
 }
 
-function Kpi({ label, value, sub, tone, href }: { label: string; value: number; sub?: string; tone?: "bad" | "warn"; href?: string }) {
+const Ico = ({ d }: { d: string }) => (
+  <span className="ico" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  </span>
+);
+
+function Kpi({ icon, label, value, sub, tone, href }: { icon: string; label: string; value: number; sub?: string; tone?: "bad" | "warn"; href?: string }) {
   const body = (
     <>
-      <span className="kpi-label">{label}</span>
+      <Ico d={icon} />
       <strong>{value.toLocaleString("ar-u-nu-latn")}</strong>
+      <span className="kpi-label">{label}</span>
       {sub && <span className="kpi-sub">{sub}</span>}
     </>
   );

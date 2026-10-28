@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { call, errMsg, invalidate, useApi, useSession } from "../shared";
+import { State } from "../State";
 
 type Doc = { id: string; title: string; kind: "url" | "file" | "text"; source: string; group?: string; chars: number; enabled: boolean; updatedAt: number };
 type Conn = { name: string; url: string; hasToken: boolean };
@@ -86,7 +87,11 @@ function App({ secret }: { secret: string }) {
       </div>
 
       {msg && <div className={`banner ${msg.ok ? "ok" : "bad"}`} role="status">{msg.text}</div>}
-      {docsApi.error && !data && <div className="banner bad">{docsApi.error}</div>}
+      {docsApi.error && !data && (
+        <State tone="bad" title="ما قدرنا نحمّل قاعدة المعرفة" actions={<button type="button" className="btn brand" onClick={() => void docsApi.reload()}>جرّب مرة ثانية</button>}>
+          ما وصلنا للسيرفر. جرّب مرة ثانية. ما ضاع شي من مصادرك. ({docsApi.error})
+        </State>
+      )}
 
       <div className="kb-grid">
         <div className="stack">
@@ -115,7 +120,7 @@ function App({ secret }: { secret: string }) {
           <section className="card">
             <h3>المصادر</h3>
             {!data && <div className="skel" style={{ height: 120 }} />}
-            {data?.docs.length === 0 && <p className="empty">ما فيه مصادر بعد. أضف رابط أو ملف أو نص من اليمين.</p>}
+            {data?.docs.length === 0 && <State title="ما فيه مصادر بعد">أضف رابط أو ملف أو نص من النماذج المجاورة، والذكاء الاصطناعي يجاوب منها بس.</State>}
             <ul className="list">
               {data?.docs.map((d) => (
                 <li key={d.id} className={d.enabled ? "" : "off"}>

@@ -10,6 +10,8 @@ import { FlowBuilder } from "./FlowBuilder";
 import { downloadJson, fileSafe } from "./download";
 import { STATUS_LABEL, fmtMs } from "./RunDetail";
 import { ACTION_LABEL, PRESETS, blankFlow, type ActionType, type EF } from "./presets";
+import { Select } from "../Select";
+import { State } from "../State";
 
 type Account = { id: string; label: string; kind: "personal" | "official" };
 type Log = { id?: string; ms?: number; t: number; account: string; accountLabel?: string; flow: string; name: string; chat: string; chatName?: string; text?: string; status: string; note?: string; actions: { type: string; ok: boolean; detail?: string }[] };
@@ -94,7 +96,18 @@ function App({ secret }: { secret: string }) {
 
   if (!data)
     return api.error || error ? (
-      <p className="err">{api.error || error}</p>
+      <State
+        tone="bad"
+        title="ما قدرنا نحمّل الفلوات"
+        actions={
+          <>
+            <button type="button" className="btn brand" onClick={() => void api.reload()}>جرّب مرة ثانية</button>
+            <Link className="btn white" href="/guide">دليل الإعداد</Link>
+          </>
+        }
+      >
+        ما وصلنا للسيرفر. تأكد من اتصالك وجرّب مرة ثانية. ما ضاع شي من فلواتك. ({api.error || error})
+      </State>
     ) : (
       <div style={{ display: "grid", gap: 12 }}>
         <div className="skel" style={{ height: 44 }} />
@@ -107,6 +120,13 @@ function App({ secret }: { secret: string }) {
 
   return (
     <>
+      <div className="page-head">
+        <div>
+          <h2>الفلوات</h2>
+          <p className="intro">ردود وإجراءات تلقائية على رسائلك: شرط، ثم رد أو وسم أو طلب خارجي.</p>
+        </div>
+        <button type="button" className="btn solid" onClick={() => setEdit(blankFlow())}>+ فلو جديد</button>
+      </div>
       <div className="chips">
         {!data.ai.configured && <a className="chip opt" href="/guide#s3">خطوات التفعيل</a>}
         <span className={`chip ${data.ai.configured ? "on" : "opt"}`}>{data.ai.configured ? `✓ ${[data.ai.claude && `Anthropic (${data.ai.model})`, data.ai.cheap && `متوافق مع OpenAI (${data.ai.cheapModel ?? "?"})`].filter(Boolean).join(" + ")} جاهز، حد يومي ${data.ai.dailyCap}` : `○ ${PROVIDER_NAME} غير مفعّل: أضف مفتاح Anthropic أو أي مزود متوافق مع OpenAI (AI_COMPAT_URL و AI_COMPAT_KEY و AI_COMPAT_MODEL) في فيرسل`}</span>
@@ -130,7 +150,6 @@ function App({ secret }: { secret: string }) {
                 <input ref={fileInput} type="file" accept=".json,application/json" multiple hidden onChange={(e) => { void importFiles(e.target.files); e.target.value = ""; }} />
                 <button type="button" className="btn ghost small" onClick={() => fileInput.current?.click()}>استيراد</button>
                 {data.flows.length > 0 && <button type="button" className="btn ghost small" onClick={() => downloadJson("whats-mcp-flows", exportFlows(data.flows))}>تصدير الكل</button>}
-                <button type="button" className="btn solid small" onClick={() => setEdit(blankFlow())}>+ فلو جديد</button>
               </div>
             </div>
             {error && <div className="banner bad">{error}</div>}
@@ -153,7 +172,14 @@ function App({ secret }: { secret: string }) {
                   <label className="sw small" title={f.enabled ? "مفعّل" : "متوقف"}><input type="checkbox" checked={f.enabled} onChange={() => toggle(f)} aria-label={`تفعيل ${f.name}`} /></label>
                 </div>
               ))}
-              {data.flows.length === 0 && <p className="empty">ما عندك فلوات بعد. ابدأ من قالب أو من فلو جديد.</p>}
+              {data.flows.length === 0 && (
+                <State
+                  title="ما عندك فلوات بعد"
+                  actions={<button type="button" className="btn solid" onClick={() => setEdit(blankFlow())}>+ فلو جديد</button>}
+                >
+                  ابدأ من قالب من القائمة المجاورة، أو سوّ فلو من الصفر.
+                </State>
+              )}
             </div>
           </section>
           <section>
@@ -194,21 +220,21 @@ function LogTable({ log, flows }: { log: Log[]; flows: Flow[] }) {
   const [status, setStatus] = useState("");
   const [flow, setFlow] = useState("");
   const [q, setQ] = useState("");
-  if (!log.length) return <p className="empty">السجل فاضي. أول ما فلو يشتغل على رسالة تشوفه هنا.</p>;
+  if (!log.length) return <State title="السجل فاضي">أول ما فلو يشتغل على رسالة تشوفه هنا.</State>;
   const needle = q.trim().toLowerCase();
   const rows = log.filter((l) => (!status || l.status === status) && (!flow || l.flow === flow) && (!needle || [l.text, l.chatName, l.chat, l.note, l.name].some((v) => v?.toLowerCase().includes(needle))));
   const time = (l: Log) => new Date(l.t).toLocaleString("ar", { dateStyle: "short", timeStyle: "short" });
   return (
     <>
       <div className="log-filters">
-        <select aria-label="الحالة" value={status} onChange={(e) => setStatus(e.target.value)}>
+        <Select aria-label="الحالة" value={status} onChange={(e) => setStatus(e.target.value)}>
           <option value="">كل الحالات</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-        </select>
-        <select aria-label="الفلو" value={flow} onChange={(e) => setFlow(e.target.value)}>
+        </Select>
+        <Select aria-label="الفلو" value={flow} onChange={(e) => setFlow(e.target.value)}>
           <option value="">كل الفلوات</option>
           {flows.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
+        </Select>
         <input aria-label="بحث" placeholder="ابحث في الرسالة أو المحادثة" value={q} onChange={(e) => setQ(e.target.value)} />
         <span className="muted small">{rows.length} من {log.length}</span>
       </div>

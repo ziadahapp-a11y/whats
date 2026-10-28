@@ -204,7 +204,7 @@ function PairForm({ secret, account, onDone }: { secret: string; account: string
 
   return (
     <>
-      <form className="field" onSubmit={link}>
+      <form className="phone-form" onSubmit={link}>
         <label htmlFor={`phone-${account}`}>رقم واتساب مع رمز الدولة</label>
         <div className="row">
           <input id={`phone-${account}`} dir="ltr" inputMode="tel" placeholder="966501234567" value={phone} onChange={(e) => setPhone(e.target.value)} required />

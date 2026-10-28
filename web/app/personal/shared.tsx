@@ -13,6 +13,15 @@ export function readSecret() {
   }
 }
 
+/** Forgets the secret in this tab and on this device (the "remember me" copy), then reloads to the sign-in screen. */
+export function forgetSecret() {
+  try {
+    sessionStorage.removeItem(KEY);
+    localStorage.removeItem(KEY);
+  } catch {}
+  location.reload();
+}
+
 export async function call<T = any>(secret: string, path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
   const r = await fetch(path, {
     method: init.method ?? (init.body !== undefined ? "POST" : "GET"),

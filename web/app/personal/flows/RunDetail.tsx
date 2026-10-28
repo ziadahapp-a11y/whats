@@ -9,6 +9,7 @@ import type { Action, Cond, Graph, LogEntry, Trigger } from "@/lib/flows/types";
 import { call, errMsg, useApi, useCopy, useSession } from "../shared";
 import { Ctx, Icon, TITLE, nodeTypes, toEdge, toNode, type RunMark } from "./FlowBuilder";
 import { ACTION_LABEL, type ActionType } from "./presets";
+import { State } from "../State";
 
 type Run = LogEntry & { accountLabel?: string };
 type Steps = LogEntry["actions"];
@@ -96,7 +97,9 @@ export function RunDetail({ id }: { id: string }) {
     return (
       <div className="page">
         <Back />
-        <div className="banner bad">{api.error}</div>
+        <State tone="bad" title="ما قدرنا نحمّل هذا التشغيل" actions={<button type="button" className="btn brand" onClick={() => void api.reload()}>جرّب مرة ثانية</button>}>
+          ممكن انحذف من السجل لأنه قديم، أو ما وصلنا للسيرفر. ({api.error})
+        </State>
       </div>
     );
   }

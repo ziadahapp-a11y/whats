@@ -10,6 +10,7 @@ import { call, errMsg, useCopy } from "../shared";
 import { ActionFields } from "./ActionFields";
 import { downloadJson, fileSafe } from "./download";
 import { ACTION_LABEL, FIELD_LABEL, NO_VALUE, OP_LABEL, newAction, type ActionType, type EF } from "./presets";
+import { Select } from "../Select";
 
 type Port = GraphEdge["port"];
 type Spec = GraphNode;
@@ -378,23 +379,23 @@ function TriggerFields({ t, onChange }: { t: Trigger; onChange: (t: Trigger) => 
   return (
     <div className="grid2">
       <label>النوع
-        <select value={t.type} onChange={(e) => onChange(pick(e.target.value))}>
+        <Select value={t.type} onChange={(e) => onChange(pick(e.target.value))}>
           <option value="message">لما توصل رسالة</option>
           <option value="schedule">على جدول زمني</option>
           <option value="webhook">لما يوصل طلب Webhook من نظام خارجي</option>
-        </select>
+        </Select>
       </label>
       {t.type === "message" && (
         <>
           <label>الاتجاه
-            <select value={t.direction} onChange={(e) => onChange({ ...t, direction: e.target.value as typeof t.direction })}>
+            <Select value={t.direction} onChange={(e) => onChange({ ...t, direction: e.target.value as typeof t.direction })}>
               <option value="in">رسائل تجيني</option><option value="out">رسائل أرسلها أنا</option><option value="any">الاثنين</option>
-            </select>
+            </Select>
           </label>
           <label>المحادثات
-            <select value={t.chats} onChange={(e) => onChange({ ...t, chats: e.target.value as typeof t.chats })}>
+            <Select value={t.chats} onChange={(e) => onChange({ ...t, chats: e.target.value as typeof t.chats })}>
               <option value="direct">الخاصة فقط</option><option value="group">المجموعات فقط</option><option value="both">الكل</option>
-            </select>
+            </Select>
           </label>
         </>
       )}
@@ -474,19 +475,19 @@ function ConditionFields({ spec, data, onChange }: { spec: Extract<Spec, { kind:
     <>
       <div className="grid2">
         <label>لازم يتحقق
-          <select value={spec.match} onChange={(e) => onChange({ ...spec, match: e.target.value as "all" | "any" })}>
+          <Select value={spec.match} onChange={(e) => onChange({ ...spec, match: e.target.value as "all" | "any" })}>
             <option value="all">كل الشروط</option><option value="any">أي شرط</option>
-          </select>
+          </Select>
         </label>
       </div>
       {spec.conditions.map((c, i) => (
         <div className="cond" key={i}>
-          <select aria-label="الحقل" value={c.field} onChange={(e) => setCond(i, e.target.value === "ai" ? { field: "ai", op: "yes", value: "" } : { ...c, field: e.target.value as Cond["field"], op: c.field === "ai" ? "contains" : c.op })}>
+          <Select aria-label="الحقل" value={c.field} onChange={(e) => setCond(i, e.target.value === "ai" ? { field: "ai", op: "yes", value: "" } : { ...c, field: e.target.value as Cond["field"], op: c.field === "ai" ? "contains" : c.op })}>
             {data.fields.map((x) => <option key={x} value={x}>{FIELD_LABEL[x] ?? x}</option>)}
-          </select>
-          <select aria-label="العملية" value={c.op} disabled={c.field === "ai"} onChange={(e) => setCond(i, { ...c, op: e.target.value as Cond["op"] })}>
+          </Select>
+          <Select aria-label="العملية" value={c.op} disabled={c.field === "ai"} onChange={(e) => setCond(i, { ...c, op: e.target.value as Cond["op"] })}>
             {data.ops.filter((o) => (c.field === "ai" ? o === "yes" : o !== "yes")).map((o) => <option key={o} value={o}>{OP_LABEL[o] ?? o}</option>)}
-          </select>
+          </Select>
           {NO_VALUE.has(c.op) ? <span /> : (
             <input aria-label="القيمة" value={String(c.value ?? "")} placeholder={c.field === "ai" ? "السؤال: هل الرسالة طلب سعر؟" : c.op === "contains_any" || c.op === "in" ? "كلمات مفصولة بفاصلة" : "القيمة"} onChange={(e) => setCond(i, { ...c, value: e.target.value })} />
           )}
@@ -531,17 +532,17 @@ function Settings({ f, set, data, secret, build, setRun }: { f: EF; set: <K exte
       <p className="hint">اضغط على أي عقدة لتعديلها، أو على + بجانب مخرجها لإضافة الخطوة التالية. اسحب من نقطة المخرج إلى عقدة ثانية للتوصيل، ومن الزر Delete تحذف العقدة أو السلك المحدد.</p>
       <div className="grid2">
         <label>الرقم
-          <select value={f.account} onChange={(e) => set("account", e.target.value)}>
+          <Select value={f.account} onChange={(e) => set("account", e.target.value)}>
             <option value="*">كل الأرقام</option>
             {data.accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
-          </select>
+          </Select>
         </label>
         <label>الوضع
-          <select value={f.mode} onChange={(e) => set("mode", e.target.value as EF["mode"])}>
+          <Select value={f.mode} onChange={(e) => set("mode", e.target.value as EF["mode"])}>
             <option value="approve">مسودة (تنتظر موافقتي)</option>
             <option value="auto">تلقائي (يرسل فوراً)</option>
             <option value="dry">تجربة (سجل فقط)</option>
-          </select>
+          </Select>
         </label>
       </div>
       <p className="mode-note">{MODE_NOTE[f.mode]}</p>

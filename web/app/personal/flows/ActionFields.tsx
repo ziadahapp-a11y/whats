@@ -1,6 +1,7 @@
 "use client";
 
 import type { Action } from "@/lib/flows/types";
+import { Select } from "../Select";
 
 export function ActionFields({ a, onChange, defaultPrompt, aiOn, cheapModel }: { a: Action; onChange: (a: Action) => void; defaultPrompt: string; aiOn: boolean; cheapModel?: string }) {
   switch (a.type) {
@@ -28,9 +29,9 @@ export function ActionFields({ a, onChange, defaultPrompt, aiOn, cheapModel }: {
           <textarea aria-label="تعليمات المهمة" value={a.prompt} onChange={(e) => onChange({ ...a, prompt: e.target.value })} placeholder="في فلو مجدول: اكتب المهمة هنا. في فلو الرسائل: تعليمات إضافية (اختياري)." />
           {cheapModel && (
             <label>المزود
-              <select value={a.provider ?? ""} onChange={(e) => onChange({ ...a, provider: (e.target.value || undefined) as "claude" | "cheap" | undefined })}>
+              <Select value={a.provider ?? ""} onChange={(e) => onChange({ ...a, provider: (e.target.value || undefined) as "claude" | "cheap" | undefined })}>
                 <option value="">الافتراضي</option><option value="claude">Anthropic</option><option value="cheap">متوافق مع OpenAI ({cheapModel})</option>
-              </select>
+              </Select>
             </label>
           )}
           <label className="sw small"><input type="checkbox" checked={a.confirm} onChange={(e) => onChange({ ...a, confirm: e.target.checked })} /> اطلب تأكيدي (\"نعم\") قبل التنفيذ</label>
@@ -45,9 +46,9 @@ export function ActionFields({ a, onChange, defaultPrompt, aiOn, cheapModel }: {
           <div className="grid2">
             <label>المدة<input type="number" min={1} value={a.minutes / unit} onChange={(e) => set(Number(e.target.value), unit)} /></label>
             <label>الوحدة
-              <select value={unit} onChange={(e) => set(a.minutes / unit, Number(e.target.value))}>
+              <Select value={unit} onChange={(e) => set(a.minutes / unit, Number(e.target.value))}>
                 <option value={1}>دقيقة</option><option value={60}>ساعة</option><option value={1440}>يوم</option>
-              </select>
+              </Select>
             </label>
           </div>
           <label className="sw small"><input type="checkbox" checked={a.cancelOnReply} onChange={(e) => onChange({ ...a, cancelOnReply: e.target.checked })} /> ألغِ الباقي لو الطرف الثاني كتب أثناء الانتظار</label>
@@ -59,7 +60,7 @@ export function ActionFields({ a, onChange, defaultPrompt, aiOn, cheapModel }: {
       return (
         <div className="grid2">
           <input dir="ltr" aria-label="الرابط" value={a.url} onChange={(e) => onChange({ ...a, url: e.target.value })} placeholder="https://…" />
-          <select aria-label="الطريقة" value={a.method} onChange={(e) => onChange({ ...a, method: e.target.value as "POST" | "GET" })}><option>POST</option><option>GET</option></select>
+          <Select aria-label="الطريقة" value={a.method} onChange={(e) => onChange({ ...a, method: e.target.value as "POST" | "GET" })}><option>POST</option><option>GET</option></Select>
         </div>
       );
     case "ai_reply":
@@ -72,16 +73,16 @@ export function ActionFields({ a, onChange, defaultPrompt, aiOn, cheapModel }: {
             <label>كم رسالة من المحادثة يقرأ<input type="number" min={1} max={60} value={a.context} onChange={(e) => onChange({ ...a, context: Number(e.target.value) })} /></label>
             {a.type === "ai" && (
               <label>يقرأ
-                <select value={a.scope} onChange={(e) => onChange({ ...a, scope: e.target.value as "chat" | "recent" })}><option value="chat">المحادثة الحالية</option><option value="recent">كل المحادثات الأخيرة</option></select>
+                <Select value={a.scope} onChange={(e) => onChange({ ...a, scope: e.target.value as "chat" | "recent" })}><option value="chat">المحادثة الحالية</option><option value="recent">كل المحادثات الأخيرة</option></Select>
               </label>
             )}
             {a.type === "ai" && a.scope === "recent" && <label>آخر كم ساعة<input type="number" min={1} max={168} value={a.hours} onChange={(e) => onChange({ ...a, hours: Number(e.target.value) })} /></label>}
             <label>أقصى طول للجواب<input type="number" min={64} max={2000} value={a.maxTokens} onChange={(e) => onChange({ ...a, maxTokens: Number(e.target.value) })} /></label>
             {cheapModel && (
               <label>المزود
-                <select value={a.provider ?? ""} onChange={(e) => onChange({ ...a, provider: (e.target.value || undefined) as "claude" | "cheap" | undefined })}>
+                <Select value={a.provider ?? ""} onChange={(e) => onChange({ ...a, provider: (e.target.value || undefined) as "claude" | "cheap" | undefined })}>
                   <option value="">الافتراضي</option><option value="claude">Anthropic</option><option value="cheap">متوافق مع OpenAI ({cheapModel})</option>
-                </select>
+                </Select>
               </label>
             )}
             <label>موديل (اختياري)<input dir="ltr" value={a.model ?? ""} placeholder="الافتراضي" onChange={(e) => onChange({ ...a, model: e.target.value || undefined })} /></label>

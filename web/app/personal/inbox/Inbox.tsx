@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { call, errMsg, invalidate, useApi, useSession, type Status } from "../shared";
+import { Select } from "../Select";
 
 type Chat = { waId: string; name?: string; lastAt: number; last?: { text: string; direction: "in" | "out"; type: string }; group: boolean; windowOpen?: boolean; tags: string[]; drafts: number };
 type Msg = { id: string; waId: string; direction: "in" | "out"; type: string; text?: string; caption?: string; filename?: string; timestamp: number; status?: string; replyTo?: string; sender?: string; senderName?: string; reaction?: { emoji: string } };
@@ -9,6 +10,7 @@ type Account = { id: string; label: string; kind: "personal" | "official" };
 type Draft = { id: string; account: string; accountLabel?: string; flowName: string; chat: string; chatName?: string; text: string; replyTo?: string; about?: { id: string; text?: string; who?: string }; createdAt: number };
 
 const EMOJIS = ["👍", "❤️", "😂", "🙏", "✅"];
+const initial = (s: string) => [...s.replace(/^\+/, "").trim()][0] ?? "؟";
 const label = (c: { waId: string; name?: string }) => c.name || (c.waId.endsWith("@g.us") ? "مجموعة" : "+" + c.waId.split("@")[0]);
 
 function short(sec: number) {
@@ -175,13 +177,15 @@ function App({ secret, status }: { secret: string; status: Status }) {
       <div className={`inbox${open && tab === "chats" ? " show-thread" : ""}`}>
         <aside className="side">
           <div className="tools">
-            <select aria-label="الرقم" value={account} onChange={(e) => (setAccount(e.target.value), setActive(null))}>
+            <Select aria-label="الرقم" value={account} onChange={(e) => (setAccount(e.target.value), setActive(null))}>
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
-            </select>
+            </Select>
             <input aria-label="بحث" placeholder="ابحث بالاسم أو الرقم" value={q} onChange={(e) => setQ(e.target.value)} />
+            <div className="seg" role="group" aria-label="القائمة">
+              <button type="button" aria-pressed={tab === "chats"} onClick={() => setTab("chats")}>المحادثات</button>
+              <button type="button" aria-pressed={tab === "drafts"} onClick={() => setTab("drafts")}>المسودات{pending ? ` (${pending})` : ""}</button>
+            </div>
             <div className="row">
-              <button type="button" className={`btn small ${tab === "chats" ? "solid" : "ghost"}`} onClick={() => setTab("chats")}>المحادثات</button>
-              <button type="button" className={`btn small ${tab === "drafts" ? "solid" : "ghost"}`} onClick={() => setTab("drafts")}>المسودات{pending ? ` (${pending})` : ""}</button>
               <button type="button" className="btn small ghost" onClick={sync} disabled={busy === "sync"}>{busy === "sync" ? "…" : "زامن"}</button>
               {kind === "personal" && (bf.running
                 ? <button type="button" className="btn small ghost" onClick={() => { stopBf.current = true; }}>إيقاف الجلب</button>
@@ -196,12 +200,15 @@ function App({ secret, status }: { secret: string; status: Status }) {
               {chats.map((c) => (
                 <li key={c.waId}>
                   <button type="button" aria-current={active === c.waId} onClick={() => (stick.current = true, setActive(c.waId), setTab("chats"))}>
-                    <div className="top">
-                      <span className="nm">{label(c)}{c.drafts ? <span className="badge">{c.drafts}</span> : null}</span>
-                      <span className="tm">{short(c.lastAt)}</span>
-                    </div>
-                    <div className="pv">{c.last ? `${c.last.direction === "out" ? "أنت: " : ""}${c.last.text}` : ""}</div>
-                    {c.tags.length > 0 && <div>{c.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</div>}
+                    <span className="av" aria-hidden="true">{initial(label(c))}</span>
+                    <span className="cbody">
+                      <span className="top">
+                        <span className="nm">{label(c)}{c.drafts ? <span className="badge">{c.drafts}</span> : null}</span>
+                        <span className="tm">{short(c.lastAt)}</span>
+                      </span>
+                      <span className="pv">{c.last ? `${c.last.direction === "out" ? "أنت: " : ""}${c.last.text}` : ""}</span>
+                      {c.tags.length > 0 && <span className="ctags">{c.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</span>}
+                    </span>
                   </button>
                 </li>
               ))}
@@ -212,8 +219,11 @@ function App({ secret, status }: { secret: string; status: Status }) {
               {drafts.map((d) => (
                 <li key={d.id}>
                   <button type="button" onClick={() => (setAccount(d.account), setActive(d.chat), setTab("chats"))}>
-                    <div className="top"><span className="nm">{d.chatName || "+" + d.chat.split("@")[0]}</span><span className="tm">{short(d.createdAt / 1000)}</span></div>
-                    <div className="pv">{d.text}</div>
+                    <span className="av" aria-hidden="true">{initial(d.chatName || d.chat.split("@")[0])}</span>
+                    <span className="cbody">
+                      <span className="top"><span className="nm">{d.chatName || "+" + d.chat.split("@")[0]}</span><span className="tm">{short(d.createdAt / 1000)}</span></span>
+                      <span className="pv">{d.text}</span>
+                    </span>
                   </button>
                 </li>
               ))}

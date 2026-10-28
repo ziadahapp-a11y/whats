@@ -73,3 +73,11 @@ To cut a release, run `/release` (or `/release patch|minor|major` to force a bum
 - **MAJOR** (vX.0.0): breaking changes to the MCP tool surface, config format, or store schema that requires user action.
 
 While pre-1.0, minor bumps may include breaking changes (per semver spec).
+
+## Deploy mirror
+
+The Vercel project behind `whats-delta.vercel.app` deploys from `ziadahapp-a11y/whats`, not from this repo: the Vercel GitHub App installed on `aliaaldihnayn-lab` belongs to a different Vercel team, so the project cannot be linked here.
+
+After every change that should go live, push it here as usual, then run `scripts/sync-deploy-repo.sh` from the repo root with that commit checked out. It copies the tree into `whats` main as one normal commit (no force push) and Vercel redeploys. Confirm with `https://whats-delta.vercel.app/api/version`: its `commit` becomes the new sync commit.
+
+This is a standing instruction from the owner: do it directly after each update, without asking again. Never read or print the project's environment variable values.
