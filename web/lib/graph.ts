@@ -22,6 +22,9 @@ export function normalizePhone(input: string): string {
   return digits;
 }
 
+/** A business-scoped user id such as "US.13491208655302741918": Meta sends it instead of the phone number for some customers. */
+export const isBsuid = (id: string) => /^[A-Z]{2}\.[A-Za-z0-9.]+$/.test(id);
+
 export type SendResult = { messageId: string; waId?: string };
 
 export class Graph {
@@ -60,7 +63,7 @@ export class Graph {
     const body: Record<string, unknown> = {
       messaging_product: "whatsapp",
       recipient_type: "individual",
-      to: normalizePhone(to),
+      ...(isBsuid(to) ? { recipient: to } : { to: normalizePhone(to) }),
       ...payload,
     };
     if (replyTo) body.context = { message_id: replyTo };

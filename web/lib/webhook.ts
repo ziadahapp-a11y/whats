@@ -154,6 +154,10 @@ export type IngestStats = {
 
 const isPhone = (s: unknown): s is string => typeof s === "string" && /^\d{7,15}$/.test(s);
 
+/** The customer's id: their phone number, or their business-scoped user id (BSUID) when Meta withholds the number. */
+const customerId = (phone: unknown, userId: unknown): string | undefined =>
+  typeof phone === "string" && phone ? phone : typeof userId === "string" && userId ? userId : undefined;
+
 /** Applies a full webhook body to the store. Unknown fields are ignored. */
 export async function ingest(body: any, store: Store, phoneNumberId?: string): Promise<IngestStats> {
   const stats: IngestStats = { messages: 0, statuses: 0, echoes: 0, fresh: [], optOuts: [] };
@@ -165,9 +169,14 @@ export async function ingest(body: any, store: Store, phoneNumberId?: string): P
       if (phoneNumberId && v.metadata?.phone_number_id && v.metadata.phone_number_id !== phoneNumberId) continue;
 
       if (change.field === "messages") {
-        for (const c of v.contacts ?? []) await store.setName(c.wa_id, c.profile?.name ?? "");
+        for (const c of v.contacts ?? []) {
+          const id = customerId(c.wa_id, c.user_id);
+          if (id) await store.setName(id, c.profile?.name ?? "");
+        }
         for (const raw of v.messages ?? []) {
-          const m = toStored(raw, raw.from, "in", "api");
+          const from = customerId(raw.from, raw.from_user_id);
+          if (!from) continue;
+          const m = toStored(raw, from, "in", "api");
           const isNew = !(await store.getMessage(m.id));
           // Record the opt-out before saving the message: if saving fails Meta redelivers, and isNew is still true then.
           const via = isNew && isPhone(m.waId) ? optOutVia(m) : null;
@@ -193,7 +202,9 @@ export async function ingest(body: any, store: Store, phoneNumberId?: string): P
       // Coexistence: messages you send from the WhatsApp Business app on your phone.
       if (change.field === "smb_message_echoes") {
         for (const raw of v.message_echoes ?? []) {
-          await store.saveMessage(toStored(raw, raw.to, "out", "business_app"));
+          const to = customerId(raw.to, raw.to_user_id);
+          if (!to) continue;
+          await store.saveMessage(toStored(raw, to, "out", "business_app"));
           stats.echoes++;
         }
       }

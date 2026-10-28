@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { MemoryKV, Store } from "./store";
 import { ingest, verifySignature } from "./webhook";
-import { normalizePhone } from "./graph";
+import { Graph, isBsuid, normalizePhone } from "./graph";
 import { isAuthorized } from "./auth";
 
 const now = 1_790_000_000;
@@ -75,6 +75,42 @@ test("coexistence echoes are stored as outgoing", async () => {
   assert.equal(m.direction, "out");
   assert.equal(m.source, "business_app");
   assert.equal(m.text, "من الجوال");
+});
+
+test("customers Meta sends without a phone number are kept by their BSUID", async () => {
+  const store = new Store(new MemoryKV());
+  const body = payload([{ from_user_id: "SA.1234567890123456789", id: "bsuid1", timestamp: String(now), type: "text", text: { body: "هلا" } }], [], "messages", {
+    contacts: [{ user_id: "SA.1234567890123456789", profile: { name: "زينب" } }],
+  });
+  const stats = await ingest(body, store, "PN1");
+  assert.equal(stats.fresh[0].waId, "SA.1234567890123456789");
+  const [c] = await store.conversations();
+  assert.equal(c.waId, "SA.1234567890123456789");
+  assert.equal(c.name, "زينب");
+});
+
+test("a message with no customer id at all is skipped", async () => {
+  const store = new Store(new MemoryKV());
+  const stats = await ingest(payload([{ id: "noid", timestamp: String(now), type: "text", text: { body: "?" } }], [], "messages", { contacts: [] }), store, "PN1");
+  assert.equal(stats.messages, 0);
+  assert.equal((await store.conversations()).length, 0);
+});
+
+test("replies to a BSUID go in recipient, phone numbers in to", async () => {
+  const sent: any[] = [];
+  const fake = (async (_url: string, init: RequestInit) => {
+    sent.push(JSON.parse(String(init.body)));
+    return new Response(JSON.stringify({ messages: [{ id: "wamid.1" }] }), { status: 200 });
+  }) as unknown as typeof fetch;
+  const graph = new Graph({ accessToken: "t", phoneNumberId: "PN1" } as any, fake);
+  await graph.sendMessage("SA.1234567890123456789", { type: "text", text: { body: "a" } });
+  await graph.sendMessage("+966 50 000 0001", { type: "text", text: { body: "b" } });
+  assert.equal(sent[0].recipient, "SA.1234567890123456789");
+  assert.equal(sent[0].to, undefined);
+  assert.equal(sent[1].to, "966500000001");
+  assert.equal(sent[1].recipient, undefined);
+  assert.ok(isBsuid("US.13491208655302741918"));
+  assert.ok(!isBsuid("966500000001"));
 });
 
 test("phone normalisation", () => {

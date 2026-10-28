@@ -11,7 +11,7 @@ type Draft = { id: string; account: string; accountLabel?: string; flowName: str
 
 const EMOJIS = ["👍", "❤️", "😂", "🙏", "✅"];
 const initial = (s: string) => [...s.replace(/^\+/, "").trim()][0] ?? "؟";
-const label = (c: { waId: string; name?: string }) => c.name || (c.waId.endsWith("@g.us") ? "مجموعة" : "+" + c.waId.split("@")[0]);
+const label = (c: { waId: string; name?: string }) => c.name || (c.waId.endsWith("@g.us") ? "مجموعة" : /^\d/.test(c.waId) ? "+" + c.waId.split("@")[0] : c.waId);
 
 function short(sec: number) {
   if (!sec) return "";
