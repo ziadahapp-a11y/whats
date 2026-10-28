@@ -28,7 +28,8 @@ export function Inbox() {
 }
 
 function App({ secret, status }: { secret: string; status: Status }) {
-  const [account, setAccount] = useState("main");
+  // The official number is the live one when it is set up; personal numbers stay one pick away.
+  const [account, setAccount] = useState(status.official ? "official" : "main");
   const [q, setQ] = useState("");
   const [dq, setDq] = useState("");
   const [active, setActive] = useState<string | null>(null);
