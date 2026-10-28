@@ -616,7 +616,7 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
   --dur-2: 220ms;
 }
 /* status colours readable in both themes (AA on cards and on their own tints) */
-.app, .gate {
+.app, .gate, .landing {
   --ok: #13734d;
   --ok-ink: #0d5a3b;
   --warn: #94570a;
@@ -624,7 +624,7 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
   --bad: #a8221a;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .app, :root:not([data-theme="light"]) .gate { --ok: #4fd6a0; --ok-ink: #4fd6a0; --warn: #e8a94e; --warn-ink: #e8a94e; --bad: #f2b8b5; }
+  :root:not([data-theme="light"]) .app, :root:not([data-theme="light"]) .gate, :root:not([data-theme="light"]) .landing { --ok: #4fd6a0; --ok-ink: #4fd6a0; --warn: #e8a94e; --warn-ink: #e8a94e; --bad: #f2b8b5; }
 }
 @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --muted: #4a5c5d; } }
 :root[data-theme="light"] { --muted: #4a5c5d; }
@@ -760,7 +760,7 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
    the brand colour stays the WhatsApp MCP green (--accent). Tokens only:
    components pick them up in the steps that follow. Scoped to the dashboard.
    ===================================================================== */
-.app, .gate {
+.app, .gate, .landing {
   /* neutrals: Base 1000/900/800/700/300/400 */
   --paper: #ffffff;
   --paper-2: #f8f8f8;
@@ -822,7 +822,7 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
   --fs-2xl: 28px;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) .app, :root:not([data-theme="light"]) .gate {
+  :root:not([data-theme="light"]) .app, :root:not([data-theme="light"]) .gate, :root:not([data-theme="light"]) .landing {
     --paper: #0b0b0e;
     --paper-2: #141418;
     --paper-3: #101013;
@@ -848,7 +848,7 @@ header.top nav .btn { padding: 6px 16px; color: var(--accent-ink); }
     --shadow-pop: 0 8px 24px -6px #00000099, 0 0 0 1px var(--line);
   }
 }
-:root[data-theme="dark"] .app, :root[data-theme="dark"] .gate {
+:root[data-theme="dark"] .app, :root[data-theme="dark"] .gate, :root[data-theme="dark"] .landing {
   --paper: #0b0b0e;
   --paper-2: #141418;
   --paper-3: #101013;
@@ -1030,23 +1030,23 @@ td.vars { display: flex; flex-wrap: wrap; gap: 4px; }
 .app .page-head { align-items: flex-start; margin-bottom: 20px; }
 
 /* buttons: Primary (ink), Secondary (tint), Accent (white + shadow), brand, outline */
-:is(.app, .gate) .btn { min-height: var(--ctl); padding: 0 20px; gap: 8px; border: 0; border-radius: var(--r-pill); background: var(--accent-t2); color: var(--accent); box-shadow: none; font: 500 var(--fs-md)/1 var(--font-ui); letter-spacing: 0; transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), transform .05s; }
-:is(.app, .gate) .btn:hover:not(:disabled) { background: var(--accent-t3); filter: none; }
-:is(.app, .gate) .btn:active:not(:disabled) { background: var(--accent-t4); }
-:is(.app, .gate) .btn.solid { background: var(--ink); color: var(--paper); }
-:is(.app, .gate) .btn.solid:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 82%, var(--paper)); }
-:is(.app, .gate) .btn.solid:active:not(:disabled) { background: color-mix(in srgb, var(--ink) 68%, var(--paper)); }
-:is(.app, .gate) .btn.brand { background: var(--accent); color: var(--accent-ink); }
-:is(.app, .gate) .btn.brand:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--ink)); }
-:is(.app, .gate) .btn.white { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
-:is(.app, .gate) .btn.white:hover:not(:disabled) { background: var(--paper-2); }
-:is(.app, .gate) .btn.outline { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
-:is(.app, .gate) .btn.danger { background: var(--bad-bg); color: var(--bad); border: 0; }
-:is(.app, .gate) .btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--bad-solid) 18%, var(--paper)); }
-:is(.app, .gate) .btn:disabled { opacity: 1; background: var(--line); color: var(--muted); box-shadow: none; cursor: not-allowed; }
-:is(.app, .gate) .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-:is(.app, .gate) .btn.small { min-height: var(--ctl-s); padding: 0 14px; font-size: var(--fs-sm); }
-:is(.app, .gate) .btn.xs { min-height: var(--ctl-xs); padding: 0 12px; font-size: var(--fs-xs); }
+:is(.app, .gate, .landing) .btn { min-height: var(--ctl); padding: 0 20px; gap: 8px; border: 0; border-radius: var(--r-pill); background: var(--accent-t2); color: var(--accent); box-shadow: none; font: 500 var(--fs-md)/1 var(--font-ui); letter-spacing: 0; transition: background var(--dur-1) var(--ease), box-shadow var(--dur-1) var(--ease), transform .05s; }
+:is(.app, .gate, .landing) .btn:hover:not(:disabled) { background: var(--accent-t3); filter: none; }
+:is(.app, .gate, .landing) .btn:active:not(:disabled) { background: var(--accent-t4); }
+:is(.app, .gate, .landing) .btn.solid { background: var(--ink); color: var(--paper); }
+:is(.app, .gate, .landing) .btn.solid:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 82%, var(--paper)); }
+:is(.app, .gate, .landing) .btn.solid:active:not(:disabled) { background: color-mix(in srgb, var(--ink) 68%, var(--paper)); }
+:is(.app, .gate, .landing) .btn.brand { background: var(--accent); color: var(--accent-ink); }
+:is(.app, .gate, .landing) .btn.brand:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 86%, var(--ink)); }
+:is(.app, .gate, .landing) .btn.white { background: var(--paper); color: var(--ink); box-shadow: var(--shadow-1); }
+:is(.app, .gate, .landing) .btn.white:hover:not(:disabled) { background: var(--paper-2); }
+:is(.app, .gate, .landing) .btn.outline { background: transparent; color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+:is(.app, .gate, .landing) .btn.danger { background: var(--bad-bg); color: var(--bad); border: 0; }
+:is(.app, .gate, .landing) .btn.danger:hover:not(:disabled) { background: color-mix(in srgb, var(--bad-solid) 18%, var(--paper)); }
+:is(.app, .gate, .landing) .btn:disabled { opacity: 1; background: var(--line); color: var(--muted); box-shadow: none; cursor: not-allowed; }
+:is(.app, .gate, .landing) .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.app, .gate, .landing) .btn.small { min-height: var(--ctl-s); padding: 0 14px; font-size: var(--fs-sm); }
+:is(.app, .gate, .landing) .btn.xs { min-height: var(--ctl-xs); padding: 0 12px; font-size: var(--fs-xs); }
 .gate-card .btn { min-height: var(--ctl-l); font-size: var(--fs-lg); }
 
 /* input fields: 1px border, 8px corners, 14px text, error underneath in red */
@@ -1235,3 +1235,94 @@ td.vars { display: flex; flex-wrap: wrap; gap: 4px; }
   .app .stack-table td:first-child { padding-bottom: 8px; border-bottom: 1px solid var(--line); }
   .app .stack-table td:first-child::before { display: none; }
 }
+
+/* =====================================================================
+   Landing page on the Ziadah system: white page, soft grey cards, pill buttons,
+   a dark hero with a green glow (the way the Ziadah sign-in screen opens).
+   Everything is under .landing, so /guide and /setup are untouched.
+   ===================================================================== */
+.landing { --glow: #5cc3b4; min-height: 100dvh; background: var(--paper); color: var(--ink); font-family: var(--font-ui); font-size: var(--fs-lg); line-height: 1.7; }
+.landing .top { position: sticky; top: 0; z-index: 30; padding: 14px 0; background: color-mix(in srgb, var(--paper) 88%, transparent); backdrop-filter: blur(10px); }
+.landing .mark { font: 700 20px var(--font-ui); }
+.landing .top nav { gap: 6px; align-items: center; font-size: var(--fs-md); }
+.landing .top nav a:not(.btn) { padding: 6px 12px; border-radius: var(--r-pill); }
+.landing .top nav a:not(.btn):hover { background: var(--paper-2); }
+
+/* hero */
+.landing .hero { position: relative; overflow: hidden; isolation: isolate; margin-top: 8px; padding: clamp(28px, 5vw, 64px); border-radius: 28px; color: #fff; background:
+  radial-gradient(60% 90% at 100% 0%, color-mix(in srgb, var(--glow) 42%, transparent), transparent 62%),
+  radial-gradient(50% 70% at 0% 100%, color-mix(in srgb, var(--glow) 18%, transparent), transparent 62%), #07090b; }
+.landing .hero::before { content: ""; position: absolute; inset: 0; z-index: -1; opacity: .5; background-image: linear-gradient(#ffffff12 1px, transparent 1px), linear-gradient(90deg, #ffffff12 1px, transparent 1px); background-size: 56px 56px; -webkit-mask-image: radial-gradient(70% 80% at 50% 40%, #000, transparent); mask-image: radial-gradient(70% 80% at 50% 40%, #000, transparent); }
+.landing .eyebrow { display: inline-block; margin: 0 0 18px; padding: 4px 14px; border-radius: var(--r-pill); background: #ffffff14; box-shadow: inset 0 0 0 1px #ffffff26; color: #ffffffd9; font-size: var(--fs-sm); }
+.landing .hero h1 { margin: 0 0 18px; color: #fff; font: 600 clamp(36px, 5vw, 62px)/1.12 var(--font-ui); letter-spacing: -.015em; }
+.landing .hero .lede { margin: 0 0 28px; max-width: 38ch; color: #ffffffbf; font-size: clamp(17px, 1.5vw, 19px); }
+.landing .hero .btn { min-height: var(--ctl-l); padding: 0 24px; font-size: var(--fs-lg); }
+.landing .hero .btn.solid { background: #fff; color: #07090b; }
+.landing .hero .btn.solid:hover:not(:disabled) { background: #e9f4f1; }
+.landing .hero .btn.ghost { background: #ffffff14; color: #fff; box-shadow: inset 0 0 0 1px #ffffff2e; }
+.landing .hero .btn.ghost:hover:not(:disabled) { background: #ffffff24; }
+.hero-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; max-width: 460px; margin: 32px 0 0; padding: 0; list-style: none; }
+.hero-stats li { display: grid; padding: 12px 18px; border-radius: 16px; background: #ffffff10; box-shadow: inset 0 0 0 1px #ffffff1f; }
+.hero-stats strong { font: 600 24px/1.2 var(--font-ui); color: #fff; }
+.hero-stats span { font-size: var(--fs-sm); color: #ffffffa6; }
+.landing .chat { border-radius: 24px; background: #ffffff10; box-shadow: inset 0 0 0 1px #ffffff24; -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.landing .chat .who { color: #ffffffa6; }
+.landing .bubble { font-size: var(--fs-md); }
+.landing .bubble.me { background: #1f7a6c; color: #fff; }
+.landing .bubble.ai { background: #ffffff1c; color: #fff; box-shadow: none; }
+.landing .bubble time { color: #ffffff8c; }
+.landing .tool { color: var(--glow); border-color: color-mix(in srgb, var(--glow) 60%, transparent); }
+
+/* sections */
+.landing section { padding: clamp(48px, 7vw, 88px) 0; border-top: 0; }
+.landing h2 { margin: 0 0 12px; font: 600 clamp(28px, 3.4vw, 40px)/1.25 var(--font-ui); letter-spacing: -.01em; }
+.landing h3 { font-family: var(--font-ui); }
+.landing .intro { max-width: var(--measure); margin: 0 0 32px; color: var(--muted); font-size: var(--fs-lg); }
+
+/* feature and safety cards */
+.landing .features { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin-top: 0; }
+.landing .feature, .landing .risks > div { padding: 22px; border: 0; border-radius: 20px; background: var(--paper-2); box-shadow: none; }
+.landing .ficon { display: grid; width: 44px; height: 44px; place-items: center; margin-bottom: 14px; border-radius: 12px; background: var(--paper); box-shadow: var(--shadow-1); color: var(--accent); }
+.landing .ficon svg { width: 22px; height: 22px; }
+.landing .feature h3, .landing .risks h3 { margin: 0 0 6px; font-size: 17px; font-weight: 600; line-height: 1.4; }
+.landing .feature p, .landing .risks p { font-size: var(--fs-md); line-height: 1.75; }
+.landing .feature ul { font-size: var(--fs-sm); }
+.landing .badge { padding: 1px 10px; background: var(--accent-t2); color: var(--accent); font-size: 12px; font-weight: 600; }
+.landing .risks { gap: 16px; }
+@media (prefers-reduced-motion: no-preference) {
+  .landing .feature, .landing .risks > div { transition: transform var(--dur-2) var(--ease), box-shadow var(--dur-2) var(--ease); }
+  .landing .feature:hover, .landing .risks > div:hover { transform: translateY(-3px); box-shadow: var(--shadow); }
+}
+
+/* steps */
+.landing .steps li::before { width: 32px; height: 32px; border: 0; background: var(--accent); color: var(--accent-ink); font-weight: 600; }
+.landing .steps li:not(:last-child)::after { inset-inline-start: 15px; top: 38px; background: var(--line-strong); }
+.landing .steps li { padding-inline-end: 0; padding-inline-start: 52px; }
+.landing .mode > div:last-child { padding: 24px; border-radius: 24px; background: var(--paper-2); }
+.landing .code { border-radius: 16px; }
+
+/* comparison table, like the dashboard tables; the easiest column is tinted */
+.landing .compare { border-collapse: separate; border-spacing: 0; font-size: var(--fs-md); }
+.landing .compare thead th { padding: 14px 16px; border: 0; background: var(--paper-2); font: 600 var(--fs-lg)/1.4 var(--font-ui); }
+.landing .compare thead tr > :first-child { border-start-start-radius: 14px; border-end-start-radius: 14px; }
+.landing .compare thead tr > :last-child { border-start-end-radius: 14px; border-end-end-radius: 14px; }
+.landing .compare td, .landing .compare tbody th { padding: 14px 16px; }
+.landing .compare tbody tr:last-child > * { border-bottom: 0; }
+.landing .compare thead th:nth-child(2), .landing .compare tbody td:nth-child(2) { background: var(--accent-t1); }
+.landing .compare thead th:nth-child(2) { background: var(--accent-t2); }
+
+.landing .note { border-radius: 16px; }
+.landing footer { border-top: 1px solid var(--line); }
+
+@media (max-width: 960px) { .landing .features { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 860px) {
+  .landing .hero { border-radius: 22px; }
+  .landing .top { padding: 10px 0; }
+}
+@media (max-width: 600px) {
+  .landing .features { grid-template-columns: 1fr; }
+  .hero-stats li { padding: 10px 12px; }
+  .landing .hero .btn { flex: 1 1 100%; justify-content: center; }
+}
+.landing section h3 { margin: 36px 0 10px; }
+.landing .table-scroll { margin-bottom: 8px; }

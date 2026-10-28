@@ -33,12 +33,40 @@ const FEATURES: { title: string; text: string; items?: string[]; badge?: string 
   { title: "الربط الرسمي", text: "لرقم الأعمال عبر Cloud API من Meta: قوالب، أزرار، ونافذة الـ24 ساعة. مع نفس الفلوات والإنبوكس." },
 ];
 
+// 24px stroke icons, keyed by the feature title
+const FICON: Record<string, string> = {
+  "اقرأ وابحث": "M21 21l-4.3-4.3M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z",
+  "أرسل بموافقتك": "M4 12l16-8-6 16-3-7-7-1z",
+  "أكثر من رقم": "M16 11a4 4 0 10-8 0 4 4 0 008 0zM4 20a8 8 0 0116 0M18 8a3 3 0 010 6",
+  "مفتاح لكل جهاز": "M14 8a4 4 0 11-3.2 6.4L4 21v-3H1v-3h3l3.6-3.6A4 4 0 0114 8zM15.5 8.5h.01",
+  "الربط من رابط واحد": "M10 14a4 4 0 005.7 0l3-3a4 4 0 00-5.7-5.7l-1 1M14 10a4 4 0 00-5.7 0l-3 3a4 4 0 005.7 5.7l1-1",
+  "صندوق الوارد": "M4 5h16v11H8l-4 4V5z",
+  "فلوات (أتمتة)": "M13 2L4 14h7l-1 8 9-12h-7l1-8z",
+  "Claude يرد على عملائك": "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3z",
+  "قاعدة معرفة": "M5 4h11a3 3 0 013 3v13H8a3 3 0 01-3-3V4zm3 4h8M8 12h8",
+  "Claude داخل واتساب": "M7 8h10v9H7zM12 4v4M9.5 12h.01M14.5 12h.01M4 12v2M20 12v2",
+  "تقارير مجدولة": "M4 20V10M10 20V4M16 20v-8M22 20H2",
+  "الربط الرسمي": "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM9 12l2 2 4-4",
+};
+const RICON = [
+  "M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6l8-3zM9 12l2 2 4-4",
+  "M12 21a9 9 0 100-18 9 9 0 000 18zM12 8v4l3 2",
+  "M7 11V8a5 5 0 0110 0v3M6 11h12v10H6z",
+];
+const Ico = ({ d }: { d: string }) => (
+  <span className="ficon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d={d} />
+    </svg>
+  </span>
+);
+
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
   const origin = await getOrigin();
   return (
-    <>
+    <div className="landing">
       <div className="wrap">
         <header className="top">
           <a className="mark" href="/">
@@ -58,7 +86,8 @@ export default async function Home() {
 
         <main>
           <div className="hero">
-            <div>
+            <div className="hero-copy">
+              <span className="eyebrow">مفتوح المصدر · يشتغل على Vercel المجاني</span>
               <h1>Claude داخل واتساب</h1>
               <p className="lede">
                 يقرأ رسائلك، يرد عن عملائك من هلب سنترك، وينفذ مهامك ويرسل لك التقارير. كل هذا من واتساب نفسه، بدون ما تفتح Claude.
@@ -68,6 +97,11 @@ export default async function Home() {
                 <a className="btn ghost" href={DEPLOY_URL}>انشر نسختك مجاناً</a>
                 <a className="btn ghost" href="/guide">دليل الإعداد الكامل</a>
               </div>
+              <ul className="hero-stats" aria-label="باختصار">
+                <li><strong>10</strong><span>أرقام خاصة</span></li>
+                <li><strong>5</strong><span>خطوات للبدء</span></li>
+                <li><strong>0</strong><span>ريال استضافة</span></li>
+              </ul>
             </div>
 
             <div className="chat" aria-label="مثال: مهمة تنرسل من واتساب">
@@ -98,6 +132,7 @@ export default async function Home() {
             <div className="features">
               {FEATURES.map((f) => (
                 <div className="feature" key={f.title}>
+                  <Ico d={FICON[f.title] ?? FICON["اقرأ وابحث"]} />
                   <h3>
                     {f.title}
                     {f.badge && <span className="badge">{f.badge}</span>}
@@ -261,14 +296,17 @@ export default async function Home() {
             <p className="intro">المساعد يتعامل مع رسائل الناس، فبنينا الحماية من البداية.</p>
             <div className="risks">
               <div>
+                <Ico d={RICON[0]} />
                 <h3>رسائل الغرباء ما تأمر Claude</h3>
                 <p>أي رسالة تصل تُعامل كبيانات فقط. ولا ينفذ مهمة إلا لو جات من رقمك أنت، ويطلب تأكيدك «نعم» قبل ما يستخدم الأدوات.</p>
               </div>
               <div>
+                <Ico d={RICON[1]} />
                 <h3>تتحكم بكل شي</h3>
                 <p>الفلوات تبدأ كمسودات تعتمدها بنفسك، وفيها حدود للساعة ولكل محادثة وللتكلفة اليومية، وزر إيقاف شامل.</p>
               </div>
               <div>
+                <Ico d={RICON[2]} />
                 <h3>بياناتك عندك</h3>
                 <p>كل شي في حسابك على Vercel وقاعدة بياناتك. مفاتيح الأجهزة تنحفظ مشفرة بالبصمة فقط، وتظهر لك مرة وحدة. المشروع مفتوح المصدر (MIT) وما له علاقة بـ Meta أو واتساب.</p>
               </div>
@@ -284,6 +322,6 @@ export default async function Home() {
           <a href="https://github.com/WhiskeySockets/Baileys">Baileys</a>. <a href={REPO}>الكود على GitHub</a>.
         </div>
       </footer>
-    </>
+    </div>
   );
 }
