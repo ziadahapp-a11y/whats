@@ -88,7 +88,7 @@ export class Store {
 
   /** Every chat id we have seen, most recent first. */
   async allChats(): Promise<string[]> {
-    return this.kv.zrange<string[]>(`${this.p}convs`, 0, -1, { rev: true });
+    return (await this.kv.zrange<unknown[]>(`${this.p}convs`, 0, -1, { rev: true })).map(String);
   }
 
   async setName(waId: string, name: string) {
@@ -140,7 +140,8 @@ export class Store {
 
   async conversations(limit = 20, query?: string, now = Math.floor(Date.now() / 1000)): Promise<Conversation[]> {
     const scan = query ? 500 : limit;
-    const waIds = await this.kv.zrange<string[]>(`${this.p}convs`, 0, scan - 1, { rev: true });
+    // Upstash turns an all-digit member like "966500000001" back into a number: keep ids as strings.
+    const waIds = (await this.kv.zrange<unknown[]>(`${this.p}convs`, 0, scan - 1, { rev: true })).map(String);
     const out: Conversation[] = [];
     const q = query?.toLowerCase().replace(/^\+/, "");
     for (const waId of waIds) {
@@ -157,7 +158,7 @@ export class Store {
   /** Substring search over the most recent messages of the most recent chats. */
   async search(query: string, limit = 20): Promise<StoredMessage[]> {
     const q = query.toLowerCase();
-    const waIds = await this.kv.zrange<string[]>(`${this.p}convs`, 0, 99, { rev: true });
+    const waIds = (await this.kv.zrange<unknown[]>(`${this.p}convs`, 0, 99, { rev: true })).map(String);
     const hits: StoredMessage[] = [];
     for (const waId of waIds) {
       for (const m of await this.messages(waId, 200)) {

@@ -113,6 +113,21 @@ test("replies to a BSUID go in recipient, phone numbers in to", async () => {
   assert.ok(!isBsuid("966500000001"));
 });
 
+test("chat ids stay strings when Redis returns all-digit members as numbers", async () => {
+  // Upstash's automatic deserialization turns "966500000001" into 966500000001.
+  class NumericKV extends MemoryKV {
+    async zrange<T>(...args: Parameters<MemoryKV["zrange"]>): Promise<T> {
+      const r = (await super.zrange<unknown[]>(...args)) as unknown[];
+      return r.map((x) => (typeof x === "string" && /^\d+$/.test(x) ? Number(x) : x)) as T;
+    }
+  }
+  const store = new Store(new NumericKV());
+  await ingest(payload([{ from: "966500000001", id: "num1", timestamp: String(now), type: "text", text: { body: "هلا" } }]), store, "PN1");
+  const [c] = await store.conversations();
+  assert.equal(c.waId, "966500000001");
+  assert.deepEqual(await store.allChats(), ["966500000001"]);
+});
+
 test("phone normalisation", () => {
   assert.equal(normalizePhone("+966 50-000 0001"), "966500000001");
   assert.throws(() => normalizePhone("123"));

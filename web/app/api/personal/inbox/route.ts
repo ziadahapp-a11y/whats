@@ -34,7 +34,7 @@ export async function GET(req: Request) {
       lastSync: t.kind === "personal" ? await lastSync(t.state) : null,
       chats: await Promise.all(
         // A chat saved before customer ids were read from from_user_id may have no id at all: skip it.
-        chats.filter((c) => typeof c.waId === "string" && c.waId).map(async (c) => ({
+        chats.filter((c) => c.waId && c.waId !== "undefined" && c.waId !== "null").map(async (c) => ({
           waId: c.waId,
           name: c.name,
           lastAt: c.lastAt,
