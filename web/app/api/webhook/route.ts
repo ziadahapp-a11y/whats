@@ -3,7 +3,7 @@ import { rawFor, runtime } from "@/lib/runtime";
 import { scopeRaw } from "@/lib/wa/accounts";
 import { normalizePhone } from "@/lib/graph";
 import { runOfficialFlows } from "@/lib/flows/sync";
-import { ingest, verifySignature } from "@/lib/webhook";
+import { confirmOptOuts, ingest, verifySignature } from "@/lib/webhook";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -33,12 +33,17 @@ export async function POST(req: Request) {
   }
   try {
     const stats = await ingest(body, store, cfg.phoneNumberId || undefined);
-    // Answer Meta first; flows (and Claude) run after the response is sent.
-    if (stats.fresh.length) {
+    // A customer who just wrote stop gets the confirmation, not an automated flow reply on top of it.
+    const stopIds = new Set(stats.optOuts.flatMap((o) => (o.messageId ? [o.messageId] : [])));
+    const fresh = stats.fresh.filter((m) => !stopIds.has(m.id));
+    // Answer Meta first; the confirmation, flows (and Claude) run after the response is sent.
+    if (fresh.length || stats.optOuts.length) {
       after(async () => {
+        await confirmOptOuts(stats.optOuts, graph, store);
+        if (!fresh.length) return;
         try {
           const base = rawFor(cfg);
-          await runOfficialFlows(stats.fresh, { base, store, graph, normalize: normalizePhone, state: scopeRaw(base, "off:") });
+          await runOfficialFlows(fresh, { base, store, graph, normalize: normalizePhone, state: scopeRaw(base, "off:") });
         } catch (e) {
           console.error("official flows failed", e);
         }
