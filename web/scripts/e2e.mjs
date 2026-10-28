@@ -122,6 +122,23 @@ try {
   const tpl = await call("create_template", { name: "x", body: "{{1}} hello", body_examples: ["a"] });
   assert.equal(tpl.isError, true, "a draft with errors is refused before anything is sent");
 
+  // The dashboard's campaigns API: master key only, uploads parse, nothing starts without a dry run.
+  const camp = (init = {}) => fetch(`${base}/api/personal/campaigns`, { ...init, headers: { ...(init.headers ?? {}), Authorization: `Bearer ${env.MCP_SECRET}` } });
+  assert.equal((await fetch(`${base}/api/personal/campaigns`)).status, 401);
+  const form = new FormData();
+  form.append("file", new Blob(["phone,consent_date,var1\n0500000001,2026-09-01,أحمد\n12345,2026-09-01,x\n"]), "list.csv");
+  const up = await (await camp({ method: "POST", body: form })).json();
+  assert.equal(up.rows, 2);
+  assert.equal(up.paramCount, 1);
+  assert.ok(!JSON.stringify(up).includes("0500000001"), "the upload summary masks numbers");
+  const json = (op) => camp({ method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(op) });
+  assert.equal((await json({ op: "dry_run", uploadId: "gone", template: "t", language: "ar" })).status, 404);
+  assert.equal((await json({ op: "start", id: "nope", token: "nope" })).status, 409);
+  const tplCheck = await (await json({ op: "template", draft: { name: "x", language: "ar", body: "{{1}} hello", bodyExamples: ["a"] }, submit: true })).json();
+  assert.equal(tplCheck.ok, false, "a draft with errors is not submitted");
+  assert.equal((await json({ op: "nonsense" })).status, 400);
+  assert.equal((await (await camp()).json()).campaigns.length, 0);
+
   // Personal mode (linked device): wiring, auth and Baileys loading, without a phone.
   r = await fetch(`${base}/api/personal/status`);
   assert.equal(r.status, 401);

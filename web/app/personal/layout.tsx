@@ -20,6 +20,7 @@ const ICON = {
   sun: "M12 17a5 5 0 100-10 5 5 0 000 10zM12 1v2M12 21v2M4.2 4.2l1.4 1.4M18.4 18.4l1.4 1.4M1 12h2M21 12h2M4.2 19.8l1.4-1.4M18.4 5.6l1.4-1.4",
   moon: "M21 12.8A9 9 0 1111.2 3a7 7 0 009.8 9.8z",
   search: "M21 21l-4.3-4.3M10.5 18a7.5 7.5 0 100-15 7.5 7.5 0 000 15z",
+  campaigns: "M3 11l15-6v14L3 13v-2zm3 2v5a2 2 0 002 2h1v-5.5M21 9v6",
 };
 
 type Item = { href: string; label: string; icon: string };
@@ -39,6 +40,7 @@ const GROUPS: { id: string; label: string; items: Item[] }[] = [
     items: [
       { href: "/personal/flows", label: "الفلوات", icon: ICON.flows },
       { href: "/personal/knowledge", label: "قاعدة المعرفة", icon: ICON.knowledge },
+      { href: "/personal/campaigns", label: "الحملات", icon: ICON.campaigns },
     ],
   },
   { id: "account", label: "الحساب", items: [{ href: "/personal", label: "الأرقام والمفاتيح", icon: ICON.numbers }] },
