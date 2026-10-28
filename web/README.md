@@ -36,6 +36,27 @@ Unlike the local binary in the repo root, this mode is fully sanctioned by Meta,
 
 `list_conversations`, `list_messages`, `search_messages`, `get_media`, `list_templates`, `get_number_status`, `send_text`, `send_media`, `send_template`, `send_buttons`, `send_reaction`, `mark_read`.
 
+## Marketing campaigns
+
+On top of the twelve tools above, `/api/mcp` has twelve more for marketing (`create_template`, `get_template_status`, `delete_template`, `register_number`, `campaign_dry_run`, `campaign_start`, `campaign_advance`, `campaign_control`, `campaign_report`, `list_campaigns`, `manage_opt_out`, `list_opt_outs`), and the dashboard has a **Campaigns** page (`/personal/campaigns`, same `MCP_SECRET` sign-in). **They need Upstash Redis**: campaign progress cannot live in process memory, so everything campaign-related refuses to run without it.
+
+How a campaign goes out:
+
+1. **Template.** Draft it in the dashboard or with `create_template`. It is checked against Meta's documented rejection causes (name, language matching the text, 1024/60/60/25 character limits, variable placement and examples, shorteners, button rules) and only then sent for review as `MARKETING`. A clean check does not guarantee approval; that is Meta's call.
+2. **List.** Upload `.xlsx` or `.csv` (up to 2,000 rows) with `phone`, `consent_date` (the registration date) and `var1`, `var2`… for the template's variables. Arabic headers `الجوال` and `تاريخ التسجيل` work too.
+3. **Dry run** sends nothing. It checks the number (CONNECTED, verified, quality GREEN), the template (APPROVED, MARKETING, body variables only), the messaging limit with a 20% margin, and every row: Saudi mobile, consent source and date, opt-out, a 7-day cooldown, duplicates, and variable values. It returns a `campaign_id` and a one-time `confirm_token` only if everything passes.
+4. **Start** re-runs all of that with current data, then **advance** sends: a pilot batch (5% of the list, at least 5), a one-minute pause to read delivery results, then the rest at up to 10 messages a second, in slices that fit a serverless function. The dashboard keeps calling advance while the page is open; with MCP, call `campaign_advance` until it reports `completed`.
+5. **Circuit breaker.** After every message (and before every batch) it halts the campaign on quality below GREEN, on Meta errors 130429, 131048, 131049, 131056, 131031, 131042, 190 or template errors 132000, 132001, 132005, 132007, 132012, 132015 and 132016, or when more than 5% of at least 20 attempts failed. A halted campaign stays halted until a person resumes it, and resuming needs the number back at GREEN.
+6. **Opt-outs** are automatic: a customer who replies a whole-message `إيقاف`, `توقف`, `إلغاء`, `STOP` or `UNSUBSCRIBE` (or taps the button) is opted out and gets one confirmation; Meta's 131050 (they stopped marketing in WhatsApp) is recorded too. Opted-out numbers are skipped even mid-campaign.
+
+One campaign can hold the account at a time. Limits and gaps worth knowing:
+
+- Messaging limits are counted from what *this* system sent in the last 24 hours; Meta exposes no "remaining" figure, so messages sent from WhatsApp Manager are invisible to it (hence the 20% margin).
+- Templates with a media header, a variable in the header, or a URL button with a variable need send-time parameters that campaigns do not support yet; the dry run refuses them.
+- Only Saudi mobiles pass screening, so every other country, US numbers included, is blocked. Meta has restricted marketing templates to some countries; check its current policy before widening this.
+- A customer whose opt-out is retried after a failed save gets no confirmation message, though the opt-out holds.
+- `exceljs` brings a moderate `npm audit` advisory about `uuid` (a `buf` argument it never passes); there is no non-breaking fix.
+
 ## Setup
 
 1. **Meta app.** At [developers.facebook.com/apps](https://developers.facebook.com/apps) create a *Business* app and add the WhatsApp product. Add your number (or onboard your existing WhatsApp Business app number with **Coexistence** to keep using the app). Create a **System User** in Business Settings with `whatsapp_business_messaging` and `whatsapp_business_management`, and generate a permanent token.
@@ -91,7 +112,7 @@ Trade-offs versus the local binary: each call that connects takes ~5–20 s; his
 
 ```bash
 npm install
-npm test        # unit tests (store, webhook parsing, signatures, auth)
+npm test        # unit tests (store, webhook parsing, signatures, auth, campaigns, templates, opt-outs)
 npm run build
 npm run e2e     # boots the build and exercises webhook + MCP end to end, without calling Meta
 npm run dev     # without Redis env vars, an in-memory store is used
