@@ -5,6 +5,7 @@ import { MemoryKV, Store } from "./store";
 import { ingest, verifySignature } from "./webhook";
 import { Graph, isBsuid, normalizePhone } from "./graph";
 import { isAuthorized } from "./auth";
+import { registerTools, TOOL_NAMES } from "./tools";
 
 const now = 1_790_000_000;
 
@@ -126,6 +127,16 @@ test("chat ids stay strings when Redis returns all-digit members as numbers", as
   const [c] = await store.conversations();
   assert.equal(c.waId, "966500000001");
   assert.deepEqual(await store.allChats(), ["966500000001"]);
+});
+
+test("a read-only key gets the read tools only", () => {
+  const names = (canSend: boolean) => {
+    const got: string[] = [];
+    registerTools({ registerTool: (n: string) => got.push(n) } as any, { graph: {} as Graph, store: new Store(new MemoryKV()), canSend });
+    return got;
+  };
+  assert.deepEqual(names(true), TOOL_NAMES);
+  assert.deepEqual(names(false), ["list_conversations", "list_messages", "search_messages", "get_media", "list_templates", "get_number_status"]);
 });
 
 test("phone normalisation", () => {
