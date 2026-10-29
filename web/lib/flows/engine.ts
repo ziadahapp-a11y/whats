@@ -274,7 +274,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
     system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}`;
-    const cal = await d.meetings?.context().catch(() => "");
+    const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
     if (cal) system += `\n\n${cal}`;
   }
   const task = a.type === "ai_reply" ? "Write my next reply to the last message from the other person." : "Do what the instructions above ask, using the conversation(s).";

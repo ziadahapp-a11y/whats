@@ -836,7 +836,7 @@ test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to
   const now = Date.UTC(2026, 9, 29, 5, 30);
   const booked: any[] = [];
   const cal: any = { busy: async () => [], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end, meet: "https://meet.google.com/abc-defg-hij" }) };
-  const m = meetings(base, () => now, cal);
+  const m = meetings(base, undefined, () => now, cal);
   const ctx = await m.context();
   assert.match(ctx, /\[2026-10-29T10:45\]/);
   const out = await m.apply("تمام أبشر [[BOOK 2026-10-29T10:45 sara@shop.sa]]", "966500000001", "Sara");
@@ -849,7 +849,36 @@ test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to
   assert.ok((await m.apply("[[BOOK 2026-10-29T10:45 not-an-email]]", "966500000001")).endsWith(HANDOFF));
   assert.equal(booked.length, 1);
   assert.equal(await m.apply("بدون حجز", "966500000001"), "بدون حجز");
-  assert.equal(await meetings(new MemoryRawKV(), () => now, cal).context(), "");
+  assert.equal(await meetings(new MemoryRawKV(), undefined, () => now, cal).context(), "");
+});
+
+test("a merchant who already has a meeting gets its time and link, never a second booking", async () => {
+  const { meetings } = await import("./flows/meetings");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
+  const store = new Store(new MemoryKV());
+  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const start = Date.UTC(2026, 9, 29, 11, 0); // 14:00 Riyadh
+  // the team added it by hand: no guest, no phone, no link, only the store name in the title
+  const team = { id: "t1", start, end: start + 1800000, summary: "اجتماع متجر عسل البركة", text: "\n" };
+  const other = { id: "t2", start: start + 7200000, end: start + 9000000, summary: "اجتماع متابعة متجر رحيق للعسل", text: "\n" };
+  const booked: any[] = [];
+  const cal: any = { busy: async () => [], events: async () => [team, other], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end }) };
+  const m = meetings(base, store, () => now, cal);
+  const ctx = await m.context("966545432944", "أبو صلاح (متجر البركة )");
+  assert.match(ctx, /already has a meeting/);
+  assert.ok(!ctx.includes("Free times"));
+  const out = await m.apply("تمام [[BOOK 2026-10-29T10:45 wmsb1@hotmail.com]]", "966545432944", "أبو صلاح (متجر البركة )");
+  assert.equal(booked.length, 0);
+  assert.match(out, /^موعدنا محجوز لك من قبل .+ بإذن الله، والفريق بيرسل لك رابط الاجتماع قبل الموعد$/);
+  // another honey store does not match on the shared word
+  assert.match(await m.context("966500000009", "متجر عسل الشفاء"), /Free times/);
+  // a Zaid booking with the merchant's email, found by the guest email they wrote in the chat
+  await store.saveMessage({ id: "i1", waId: "966500000007", direction: "in", type: "text", text: "Sara@Shop.sa", timestamp: now / 1000 });
+  cal.events = async () => [{ id: "z1", start, end: start + 1800000, emails: ["sara@shop.sa"], meet: "https://meet.google.com/abc" }];
+  const again = await m.apply("[[BOOK 2026-10-29T10:45 sara@shop.sa]]", "966500000007", "Sara");
+  assert.equal(booked.length, 0);
+  assert.ok(again.endsWith("\n[دخول الاجتماع](https://meet.google.com/abc)"));
 });
 
 test("meeting reminder goes once, 45 minutes before, only inside the 24h window", async () => {
