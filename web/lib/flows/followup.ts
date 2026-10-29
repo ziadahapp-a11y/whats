@@ -11,7 +11,7 @@ export const FOLLOWUP_AFTER = 20 * 3600;
 const LATEST = 23.5 * 3600;
 
 /** Our last message ended the exchange (handoff, opt-out, thanks), so the merchant owes no reply. */
-const CLOSED = /جاري تحويلك للفريق|تم إيقاف الرسائل|سعدنا بخدمتك|ننتظر ردك عشان نكمل معك|موعدنا|حاضرين لأي|العفو/;
+const CLOSED = /جاري تحويلك للفريق|تم إيقاف الرسائل|سعدنا بخدمتك|ننتظر ردك عشان نكمل معك|موعدنا|حاضرين لأي|العفو|وصلتنا رسالتكم/;
 
 export async function sendFollowups(d: { store: Store; state: RawKV; channel: Channel }, now = Math.floor(Date.now() / 1000), scan = 200): Promise<string[]> {
   const convs = await d.store.conversations(scan, undefined, now);
