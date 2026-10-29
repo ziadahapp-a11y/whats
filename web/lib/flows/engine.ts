@@ -784,8 +784,8 @@ export async function runWebhookFlow(flow: Flow, input: WebhookInput, d: EngineD
 const hasAiReply = (f: Flow) => f.actions.some((a) => a.type === "ai_reply") || !!f.graph?.nodes.some((n) => n.kind === "action" && n.action.type === "ai_reply");
 
 /**
- * Chats whose last message is the other person's and got no answer (the AI skipped it, failed, or it came in
- * while flows were off) get one more pass through the AI-reply flows, while the 24-hour window still has
+ * Chats whose last message is the other person's and that the AI-reply flow never handled (it failed, or the
+ * message came in while flows were off or before the flow existed) get one pass through the AI-reply flows, while the 24-hour window still has
  * at least half an hour left. The person waits `minAgeMinutes` first so a live reply or the team can answer.
  */
 export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: { minAgeMinutes?: number; max?: number; scan?: number } = {}): Promise<LogEntry[]> {
@@ -806,6 +806,8 @@ export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: {
       const x = makeCtx(flow, d, now, m, chatName, tags);
       try {
         if (!(await matches(flow, x, d)).ok) continue;
+        // a message the flow already looked at and chose to skip (personal, bot, team) stays skipped
+        if (await d.state.get(`flow:seen:${flow.id}:${m.id}`)) continue;
         if (!(await d.state.set(`flow:catch:${flow.id}:${m.id}`, "1", { ex: 7 * 86400, nx: true }))) continue;
         done++;
         const fired = await fire(flow, x, d);

@@ -920,4 +920,8 @@ test("an unanswered last message gets one more AI pass inside the window, after 
   assert.equal(logs.length, 1);
   assert.deepEqual(sent.map((x) => x.chat), [CHAT]);
   assert.equal((await catchUpUnanswered(deps, now + 60_000)).length, 0); // once per message
+  const chat5 = "966500000005@s.whatsapp.net";
+  await store.saveMessage(msg({ id: "u5", waId: chat5, timestamp: s - 3600 }));
+  await deps.state.set("flow:seen:f1:u5", "1");
+  assert.equal((await catchUpUnanswered(deps, now + 120_000)).length, 0); // already skipped by the live flow
 });
