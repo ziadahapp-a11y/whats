@@ -4,7 +4,7 @@
 import type { RawKV } from "../wa/auth";
 import type { Store } from "../store";
 import type { Channel } from "./engine";
-import { Calendar, connection, type CalEvent, freeSlots, getSettings, localDay, localIso, atLocal, slotLabel, spread, timeLabel, type Settings } from "../gcal";
+import { Calendar, connection, type CalEvent, freeSlots, getSettings, localIso, slotLabel, spread, timeLabel, type Settings } from "../gcal";
 
 export const HANDOFF = "جاري تحويلك للفريق المختص\n\nان لم تتلقى رد خلال 24 ساعة، فضلاً عاود الإرسال فذلك بسبب كثرة الرسائل أو اجازة الأسبوع";
 const MARKER = /\[\[\s*BOOK\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s+([^\s\]]+)\s*\]\]/i;
@@ -55,7 +55,8 @@ ${list}`;
         const slot = (await free(cal, s, now())).find((t) => localIso(t, s.tz) === when);
         if (slot === undefined) throw new Error(`${when} is not free any more`);
         const ev = await cal.book({ start: slot, end: slot + s.minutes * 60000, title: s.title, email, chat, name, tz: s.tz });
-        return `${text}\n\nموعدنا ${slotLabel(slot, s.tz)}، ووصلتك دعوة على ${email}.${ev.meet ? `\nرابط الاجتماع: ${ev.meet}` : ""}`.trim();
+        // the system's confirmation replaces Zaid's own wording, so the merchant reads it once
+        return `تم حجز موعدنا ${slotLabel(slot, s.tz)} بإذن الله، ووصلتك دعوة على ${email}.${meetLine(ev)}`;
       } catch (e) {
         console.error("meeting booking failed", chat, e);
         return `ما قدرت أثبت الموعد تلقائياً، والفريق بيأكده لك.\n\n${HANDOFF}`;
@@ -102,21 +103,21 @@ export class ChatMatcher {
   }
 }
 
-type Deps = { base: RawKV; store: Store; state: RawKV; channel: Channel };
-const meetLine = (ev: CalEvent) => (ev.meet ? `\nرابط الاجتماع: ${ev.meet}` : "");
 
 /**
  * Meetings in the calendar that belong to a WhatsApp chat (booked by Zaid, from the booking page or by the team):
  * - a confirmation for one booked in the last two days that Zaid did not book itself (Zaid confirms in its reply);
- * - on the meeting day, from 8 in the morning until 30 minutes before it, one reminder.
+ * - one reminder REMIND_MINUTES before it starts (sent at the first wake-up inside that window).
  * Both only while the merchant's 24-hour window is open.
  */
+type Deps = { base: RawKV; store: Store; state: RawKV; channel: Channel };
+// shown as a "دخول الاجتماع" button on the official number
+const meetLine = (ev: CalEvent) => (ev.meet ? `\n[دخول الاجتماع](${ev.meet})` : "");
+export const REMIND_MINUTES = 45;
+
 export async function sendMeetingReminders(d: Deps, now = Date.now(), cal = new Calendar(d.base)): Promise<string[]> {
   if (!(await connection(d.base)).connected) return [];
   const s = await getSettings(d.base);
-  const today = localDay(now, s.tz);
-  const morning = atLocal(today.y, today.m, today.d, "08:00", s.tz);
-  const endOfDay = atLocal(today.y, today.m, today.d, "23:59", s.tz);
   const match = new ChatMatcher(d.store);
   const sent: string[] = [];
   const send = async (chat: string, text: string) => {
@@ -129,19 +130,19 @@ export async function sendMeetingReminders(d: Deps, now = Date.now(), cal = new 
       return false;
     }
   };
-  for (const ev of await cal.events(now + 30 * 60000, now + (s.aheadDays + 1) * 86400000)) {
+  for (const ev of await cal.events(now + 5 * 60000, now + (s.aheadDays + 1) * 86400000)) {
     const fresh = !ev.chat && !!ev.created && now - ev.created < 2 * 86400000;
-    const isToday = ev.start <= endOfDay && now >= morning;
-    if (!fresh && !isToday) continue;
+    const due = ev.start - now <= REMIND_MINUTES * 60000;
+    if (!fresh && !due) continue;
     const chat = await match.chatFor(ev);
     if (!chat || !(await d.store.window(chat, Math.floor(now / 1000))).windowOpen) continue;
     if (fresh && (await d.state.set(`mc:${ev.id}`, "1", { ex: 30 * 86400, nx: true }))) {
-      // a same-day confirmation already says when; no separate reminder after it
-      if (isToday) await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400 });
+      // a confirmation this close to the start already says when; no separate reminder after it
+      if (due) await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400 });
       await send(chat, `حياك الله، تم تأكيد موعدنا ${slotLabel(ev.start, s.tz)} بإذن الله${meetLine(ev)}`);
       continue;
     }
-    if (isToday && (await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400, nx: true }))) {
+    if (due && (await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400, nx: true }))) {
       await send(chat, `حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة ${timeLabel(ev.start, s.tz)}${meetLine(ev)}`);
     }
   }
