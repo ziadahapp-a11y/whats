@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { CLOSING_RULE, LINK_RULE } from "./links";
+import { CLOSING_RULE, GROUP_RULE, LINK_RULE, TEAM_ACTIVE_SECS, TEAM_QUIET_SECS, TEAM_RULE, UNSURE_RULE } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -243,7 +243,8 @@ async function addTag(state: RawKV, chat: string, tag: string) {
 
 async function transcriptFor(x: Ctx, d: EngineDeps, a: { context: number; scope: "chat" | "recent"; hours: number }): Promise<string> {
   const line = (m: StoredMessage, chatName?: string) => {
-    const who = m.direction === "out" ? "Me" : m.senderName || (m.sender ? `+${m.sender}` : chatName || "Them");
+    // on the official number, replies typed in the WhatsApp Business app are the team's, not Zaid's
+    const who = m.direction === "out" ? (m.source === "business_app" ? "Team" : "Me") : m.senderName || (m.sender ? `+${m.sender}` : chatName || "Them");
     const t = localParts(m.timestamp * 1000, x.flow.tz).hhmm;
     return `[${t}] ${who}: ${(bodyOf(m) || `[${m.type}]`).slice(0, 800)}`;
   };
@@ -261,6 +262,12 @@ async function transcriptFor(x: Ctx, d: EngineDeps, a: { context: number; scope:
   return msgs.map((m) => line(m, x.chatName)).join("\n").slice(-6000);
 }
 
+/** when a team member last wrote in this chat from the WhatsApp Business app (unix seconds) */
+async function teamWroteAt(d: EngineDeps, chat: string): Promise<number | undefined> {
+  const m = (await d.store.messages(chat, 20)).filter((m) => m.direction === "out" && m.source === "business_app").pop();
+  return m?.timestamp;
+}
+
 async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d: EngineDeps): Promise<string> {
   if (!d.ai) throw new Error("Set ANTHROPIC_API_KEY in Vercel to use Claude in flows.");
   if (!(await takeAi(d, x.now))) throw new Error("Daily Claude limit reached (AI_MAX_PER_DAY).");
@@ -273,7 +280,9 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
-    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}`;
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}`;
+    const team = await teamWroteAt(d, x.chat);
+    if (team && x.now / 1000 - team < TEAM_ACTIVE_SECS) system += `\n\n${TEAM_RULE}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
     if (cal) system += `\n\n${cal}`;
   }
@@ -464,7 +473,9 @@ async function runActions(flow: Flow, x: Ctx, d: EngineDeps, mode: Flow["mode"],
         }
         case "ai_reply": {
           needChat(a.type);
-          let out = await runAi(a, x, d);
+          // a team member typing in the app right now owns the chat: Zaid stays out
+          const team = d.channel.kind === "official" ? await teamWroteAt(d, x.chat) : undefined;
+          let out = team && x.now / 1000 - team < TEAM_QUIET_SECS ? SKIP : await runAi(a, x, d);
           if (!out.includes(SKIP) && d.meetings && mode === "auto") out = await d.meetings.apply(out, x.chat, x.chatName);
           x.vars.ai = out === SKIP ? "" : out;
           output = x.vars.ai;
