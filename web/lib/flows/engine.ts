@@ -12,7 +12,8 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { LINK_RULE } from "./links";
+import { CLOSING_RULE, LINK_RULE } from "./links";
+import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
 export type Channel = {
@@ -48,6 +49,8 @@ export type EngineDeps = {
   fetchImpl?: typeof fetch;
   /** the knowledge base context for a question (Claude actions only) */
   knowledge?: (query: string) => Promise<string>;
+  /** official number: free times from Google Calendar for Zaid, and booking the one picked */
+  meetings?: Meetings;
   /** validates webhook addresses; defaults to public-https-only with a DNS check */
   checkUrl?: (url: string) => Promise<string>;
 };
@@ -269,7 +272,11 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     const kb = await d.knowledge(`${recent}\n${a.prompt ?? ""}`.trim());
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
-  if (a.type === "ai_reply" && d.channel.kind === "official") system += `\n\n${LINK_RULE}`;
+  if (a.type === "ai_reply" && d.channel.kind === "official") {
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}`;
+    const cal = await d.meetings?.context().catch(() => "");
+    if (cal) system += `\n\n${cal}`;
+  }
   const task = a.type === "ai_reply" ? "Write my next reply to the last message from the other person." : "Do what the instructions above ask, using the conversation(s).";
   const out = await d.ai({ system, user: `<conversation>\n${transcript}\n</conversation>\n\n${task}`, maxTokens: a.maxTokens, model: a.model, provider: a.provider });
   return out.trim();
@@ -457,7 +464,8 @@ async function runActions(flow: Flow, x: Ctx, d: EngineDeps, mode: Flow["mode"],
         }
         case "ai_reply": {
           needChat(a.type);
-          const out = await runAi(a, x, d);
+          let out = await runAi(a, x, d);
+          if (!out.includes(SKIP) && d.meetings && mode === "auto") out = await d.meetings.apply(out, x.chat, x.chatName);
           x.vars.ai = out === SKIP ? "" : out;
           output = x.vars.ai;
           detail = out.includes(SKIP) ? "Claude chose not to reply" : await deliver(x.chat, out, a.quote ? x.msg?.id : undefined);

@@ -777,7 +777,7 @@ test("a link in an official reply becomes one cta_url button, with a text fallba
 });
 
 test("official ai replies are told how to name link buttons; personal ones are not", async () => {
-  const { LINK_RULE } = await import("./flows/links");
+  const { LINK_RULE, CLOSING_RULE } = await import("./flows/links");
   for (const kind of ["official", "personal"] as const) {
     const systems: string[] = [];
     const ai: AiClient = async (r) => (systems.push(r.system), "تمام");
@@ -788,6 +788,7 @@ test("official ai replies are told how to name link buttons; personal ones are n
     await runFlows(deps, [m], NOW);
     assert.equal(systems.length, 1, kind);
     assert.equal(systems[0].includes(LINK_RULE), kind === "official", kind);
+    assert.equal(systems[0].includes(CLOSING_RULE), kind === "official", kind);
   }
 });
 
@@ -811,4 +812,61 @@ test("one follow-up when the merchant has been quiet for 20 hours and we wrote l
   assert.deepEqual(await sendFollowups(d, now), ["966500000001"]);
   assert.deepEqual(sent, [`966500000001:${FOLLOWUP_TEXT}`]);
   assert.deepEqual(await sendFollowups(d, now + 600), []); // only once
+});
+
+test("free slots respect Riyadh working hours, notice, gaps and busy time", async () => {
+  const { freeSlots, localIso, cleanSettings, atLocal, spread } = await import("./gcal");
+  const s = cleanSettings({ days: [0, 1, 2, 3, 4], start: "10:00", end: "12:00", minutes: 30, gap: 15, noticeHours: 2, aheadDays: 2, tz: "Asia/Riyadh" });
+  // Thursday 29 Oct 2026, 08:30 Riyadh (05:30Z)
+  const now = Date.UTC(2026, 9, 29, 5, 30);
+  assert.equal(atLocal(2026, 10, 29, "10:30", "Asia/Riyadh"), Date.UTC(2026, 9, 29, 7, 30));
+  const busy = [{ start: Date.UTC(2026, 9, 29, 8, 30), end: Date.UTC(2026, 9, 29, 9, 0) }]; // 11:30-12:00 local
+  const slots = freeSlots(s, busy, now).map((t) => localIso(t, s.tz));
+  // slots step 30+15 from 10:00: 10:00 is inside the 2h notice, 11:30 is busy; Fri/Sat are off; Sunday is past aheadDays
+  assert.deepEqual(slots, ["2026-10-29T10:45"]);
+  const wide = cleanSettings({ ...s, aheadDays: 4, end: "16:00" });
+  const offer = spread(freeSlots(wide, [], now, 60), wide.tz).map((t) => localIso(t, wide.tz));
+  assert.deepEqual(offer, ["2026-10-29T10:45", "2026-10-29T11:30", "2026-11-01T10:00", "2026-11-01T10:45", "2026-11-02T10:00", "2026-11-02T10:45"]);
+});
+
+test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to the team", async () => {
+  const { meetings, HANDOFF } = await import("./flows/meetings");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r", email: "team@ziadah.app" }));
+  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const booked: any[] = [];
+  const cal: any = { busy: async () => [], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end, meet: "https://meet.google.com/abc-defg-hij" }) };
+  const m = meetings(base, () => now, cal);
+  const ctx = await m.context();
+  assert.match(ctx, /\[2026-10-29T10:45\]/);
+  const out = await m.apply("تمام أبشر [[BOOK 2026-10-29T10:45 sara@shop.sa]]", "966500000001", "Sara");
+  assert.equal(booked.length, 1);
+  assert.equal(booked[0].email, "sara@shop.sa");
+  assert.equal(booked[0].start, Date.UTC(2026, 9, 29, 7, 45));
+  assert.match(out, /^تمام أبشر\n\nموعدنا .+ووصلتك دعوة على sara@shop\.sa\.\nرابط الاجتماع: https:\/\/meet\.google\.com\/abc-defg-hij$/);
+  assert.ok(!out.includes("[[BOOK"));
+  assert.ok((await m.apply("[[BOOK 2026-10-29T10:35 sara@shop.sa]]", "966500000001")).endsWith(HANDOFF));
+  assert.ok((await m.apply("[[BOOK 2026-10-29T10:45 not-an-email]]", "966500000001")).endsWith(HANDOFF));
+  assert.equal(booked.length, 1);
+  assert.equal(await m.apply("بدون حجز", "966500000001"), "بدون حجز");
+  assert.equal(await meetings(new MemoryRawKV(), () => now, cal).context(), "");
+});
+
+test("meeting reminder goes once on the day, only after 8am and inside the 24h window", async () => {
+  const { sendMeetingReminders } = await import("./flows/meetings");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
+  const store = new Store(new MemoryKV());
+  const state = new MemoryRawKV();
+  const sent: string[] = [];
+  const channel: Channel = { account: "official", kind: "official", sendText: async (c, t) => (sent.push(`${c}|${t}`), "x"), react: async () => {}, markRead: async () => {}, resolveTarget: (s) => s };
+  const start = Date.UTC(2026, 9, 29, 11, 0); // 14:00 Riyadh
+  const cal: any = { booked: async () => [{ id: "e1", start, end: start + 1800000, chat: "966500000001", meet: "https://meet.google.com/x" }, { id: "e2", start, end: start + 1800000, chat: "966500000002" }] };
+  await store.saveMessage({ id: "i1", waId: "966500000001", direction: "in", type: "text", text: "تمام", timestamp: Math.floor(Date.UTC(2026, 9, 28, 20, 0) / 1000) });
+  await store.saveMessage({ id: "i2", waId: "966500000002", direction: "in", type: "text", text: "تمام", timestamp: Math.floor(Date.UTC(2026, 9, 27, 20, 0) / 1000) }); // window closed
+  const d = { base, store, state, channel };
+  assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 4, 0), cal), []); // 07:00 Riyadh
+  assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 5, 30), cal), ["966500000001"]);
+  assert.match(sent[0], /^966500000001\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 م\nرابط الاجتماع: https:\/\/meet\.google\.com\/x$/);
+  assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 6, 0), cal), []);
 });

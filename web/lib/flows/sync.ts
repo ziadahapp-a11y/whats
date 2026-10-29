@@ -15,6 +15,7 @@ import { runFlows, type Channel, type EngineDeps } from "./engine";
 import { flowsFor, isPaused } from "./storage";
 import { ctaPayload, linkButton, plainLinks } from "./links";
 import { sendFollowups } from "./followup";
+import { meetings, sendMeetingReminders } from "./meetings";
 import type { StoredMessage } from "../store";
 
 const num = (v: string | undefined, fallback: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
@@ -105,8 +106,9 @@ export async function runOfficialFlows(fresh: StoredMessage[], io: OfficialIO) {
   const flows = await flowsFor(io.base, "official");
   if (!flows.length || (await isPaused(io.base))) return [];
   const channel = officialChannel(io);
-  const logs = await runFlows({ flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base) }, fresh);
-  // Every wake-up (a message or the cron ping) also checks for merchants who went quiet.
+  const logs = await runFlows({ flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base), meetings: meetings(io.base) }, fresh);
+  // Every wake-up (a message or the cron ping) also checks for merchants who went quiet and meetings due today.
   await sendFollowups({ store: io.store, state: io.state, channel }).catch((e) => console.error("follow-ups failed", e));
+  await sendMeetingReminders({ base: io.base, store: io.store, state: io.state, channel }).catch((e) => console.error("meeting reminders failed", e));
   return logs;
 }

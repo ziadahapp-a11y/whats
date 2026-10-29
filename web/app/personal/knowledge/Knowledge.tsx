@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { call, errMsg, invalidate, useApi, useSession } from "../shared";
 import { State } from "../State";
+import { CalendarPanel } from "./CalendarPanel";
 
 type Doc = { id: string; title: string; kind: "url" | "file" | "text"; source: string; group?: string; chars: number; enabled: boolean; updatedAt: number };
 type Conn = { name: string; url: string; hasToken: boolean };
@@ -148,6 +149,8 @@ function App({ secret }: { secret: string }) {
             </div>
             {answer && <div className="answer">{answer}</div>}
           </section>
+
+          <CalendarPanel secret={secret} />
 
           <section className="card">
             <h3>موصلات المساعد (MCP)</h3>

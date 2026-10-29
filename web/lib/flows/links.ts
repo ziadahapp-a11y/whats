@@ -5,6 +5,9 @@ export const DEFAULT_LINK_LABEL = "افتح الرابط";
 /** Told to the AI on the official number, so it names the button. */
 export const LINK_RULE = `If your reply includes a link, write it once as [button label](https://...) with a short label of up to 20 characters that says what the link opens (for example: [شوف الباقات](https://...)). Use one link per reply whenever you can.`;
 
+/** Official number: a merchant who closes the chat gets a short closing line, so it does not stay waiting on us. */
+export const CLOSING_RULE = `When the merchant only closes the conversation (thanks, ok, a sticker or similar) and nothing is left to do, do not output [[SKIP]]: reply with one short, warm closing line in their dialect, for example: العفو، حاضرين لأي استفسار. Use the rating message instead when its conditions apply. This overrides any earlier rule to skip such closing messages. If your own last message was already a closing line or the rating message, output [[SKIP]] so the chat ends there. Still output [[SKIP]] for bots, spam, personal messages, or when a team member is handling the chat.`;
+
 export type LinkButton = { body: string; label: string; url: string };
 
 const MD = /\[([^\]\n]{1,60})\]\((https:\/\/[^\s)]+)\)/;
