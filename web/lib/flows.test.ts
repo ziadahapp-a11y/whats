@@ -790,3 +790,25 @@ test("official ai replies are told how to name link buttons; personal ones are n
     assert.equal(systems[0].includes(LINK_RULE), kind === "official", kind);
   }
 });
+
+test("one follow-up when the merchant has been quiet for 20 hours and we wrote last", async () => {
+  const { sendFollowups, FOLLOWUP_TEXT } = await import("./flows/followup");
+  const now = 1_800_000_000;
+  const store = new Store(new MemoryKV());
+  const state = new MemoryRawKV();
+  const sent: string[] = [];
+  const channel: Channel = { account: "official", kind: "official", sendText: async (c, t) => (sent.push(`${c}:${t}`), "x"), react: async () => {}, markRead: async () => {}, resolveTarget: (s) => s };
+  const conv = async (waId: string, inAgoH: number, out?: string) => {
+    await store.saveMessage({ id: `${waId}-in`, waId, direction: "in", type: "text", text: "سؤال", timestamp: now - inAgoH * 3600 });
+    if (out) await store.saveMessage({ id: `${waId}-out`, waId, direction: "out", type: "text", text: out, timestamp: now - inAgoH * 3600 + 60, status: "sent" });
+  };
+  await conv("966500000001", 20.5, "متى يناسبك الاجتماع؟"); // due
+  await conv("966500000002", 10, "متى يناسبك؟"); // too early
+  await conv("966500000003", 23.8, "متى يناسبك؟"); // window about to close
+  await conv("966500000004", 21); // merchant wrote last
+  await conv("966500000005", 21, "تمام\n\nجاري تحويلك للفريق المختص"); // handed off
+  const d = { store, state, channel };
+  assert.deepEqual(await sendFollowups(d, now), ["966500000001"]);
+  assert.deepEqual(sent, [`966500000001:${FOLLOWUP_TEXT}`]);
+  assert.deepEqual(await sendFollowups(d, now + 600), []); // only once
+});

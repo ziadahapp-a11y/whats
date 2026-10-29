@@ -14,6 +14,7 @@ import { knowledgeContext } from "../kb/store";
 import { runFlows, type Channel, type EngineDeps } from "./engine";
 import { flowsFor, isPaused } from "./storage";
 import { ctaPayload, linkButton, plainLinks } from "./links";
+import { sendFollowups } from "./followup";
 import type { StoredMessage } from "../store";
 
 const num = (v: string | undefined, fallback: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
@@ -103,5 +104,9 @@ export const engineExtras = (base: RawKV): Omit<EngineDeps, "flows" | "state" | 
 export async function runOfficialFlows(fresh: StoredMessage[], io: OfficialIO) {
   const flows = await flowsFor(io.base, "official");
   if (!flows.length || (await isPaused(io.base))) return [];
-  return runFlows({ flows, state: io.state, store: io.store, channel: officialChannel(io), deadline: Date.now() + 45_000, ...engineExtras(io.base) }, fresh);
+  const channel = officialChannel(io);
+  const logs = await runFlows({ flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base) }, fresh);
+  // Every wake-up (a message or the cron ping) also checks for merchants who went quiet.
+  await sendFollowups({ store: io.store, state: io.state, channel }).catch((e) => console.error("follow-ups failed", e));
+  return logs;
 }
