@@ -213,10 +213,10 @@ export class Calendar {
     return (data.calendars?.primary?.busy ?? []).map((b: any) => ({ start: Date.parse(b.start), end: Date.parse(b.end) }));
   }
 
-  async book(o: { start: number; end: number; title: string; email: string; chat: string; name?: string; tz: string }): Promise<CalEvent> {
+  async book(o: { start: number; end: number; title: string; email: string; chat: string; name?: string; tz: string; store?: string }): Promise<CalEvent> {
     const body = {
       summary: o.name ? `${o.title} - ${o.name}` : o.title,
-      description: `حجزه زيد من واتساب. رقم التاجر: +${o.chat}`,
+      description: `حجزه زيد من واتساب. رقم التاجر: +${o.chat}${o.store ? `\nرابط المتجر: ${o.store}` : ""}`,
       start: { dateTime: new Date(o.start).toISOString(), timeZone: o.tz },
       end: { dateTime: new Date(o.end).toISOString(), timeZone: o.tz },
       attendees: [{ email: o.email }],

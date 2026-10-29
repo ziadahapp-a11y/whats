@@ -1,5 +1,5 @@
 // Meetings on the official number: Zaid offers free times from Google Calendar, books the one the
-// merchant picks (marker [[BOOK <local time> <email>]] in its reply), and reminds them on the day.
+// merchant picks (marker [[BOOK <local time> <email> <store link>]] in its reply), and reminds them on the day.
 
 import type { RawKV } from "../wa/auth";
 import type { Store } from "../store";
@@ -7,7 +7,7 @@ import type { Channel } from "./engine";
 import { Calendar, connection, type CalEvent, freeSlots, getSettings, localIso, slotLabel, spread, timeLabel, type Settings } from "../gcal";
 
 export const HANDOFF = "جاري تحويلك للفريق المختص\n\nان لم تتلقى رد خلال 24 ساعة، فضلاً عاود الإرسال فذلك بسبب كثرة الرسائل أو اجازة الأسبوع";
-const MARKER = /\[\[\s*BOOK\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s+([^\s\]]+)\s*\]\]/i;
+const MARKER = /\[\[\s*BOOK\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s+([^\s\]]+)(?:\s+([^\s\]]+))?\s*\]\]/i;
 const EMAIL = /^[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}$/i;
 
 export type Meetings = {
@@ -57,8 +57,8 @@ export function meetings(base: RawKV, store?: Store, now: () => number = Date.no
       const list = offer.length ? offer.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n") : "(no free times right now)";
       return `Meetings: you can book a ${s.minutes}-minute online meeting (Google Meet) yourself. This replaces handing meeting requests to the team.
 - Offer the merchant two or three of the free times below, using the Arabic label only. Never offer or accept any other time.
-- To send the calendar invite you need the merchant's email; ask for it if it is not in the conversation.
-- Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email>]], for example [[BOOK ${offer[0] ? localIso(offer[0], s.tz) : "2026-11-02T10:30"} name@example.com]]. The system books it and adds the meeting link.
+- To send the calendar invite you need the merchant's email, and the team needs their store link; ask for whichever is not in the conversation, both in one message.
+- Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email> <store link>]], for example [[BOOK ${offer[0] ? localIso(offer[0], s.tz) : "2026-11-02T10:30"} name@example.com https://shop.example.com]]. Leave the store link out only if the merchant has none or does not want to share it; never invent one. The system books it and adds the meeting link.
 - If none of the times suits them or no free times are listed, hand over to the team as usual.
 Free times (${s.tz}):
 ${list}`;
@@ -68,7 +68,7 @@ ${list}`;
       const m = MARKER.exec(reply);
       if (!m) return reply;
       const text = reply.replace(MARKER, "").trim();
-      const [, when, email] = m;
+      const [, when, email, link] = m;
       try {
         if (!EMAIL.test(email)) throw new Error(`bad email ${email}`);
         const s = await getSettings(base);
@@ -76,7 +76,8 @@ ${list}`;
         if (had) return `موعدنا محجوز لك من قبل ${slotLabel(had.start, s.tz)} بإذن الله${had.meet ? meetLine(had) : "، والفريق بيرسل لك رابط الاجتماع قبل الموعد"}`;
         const slot = (await free(cal, s, now())).find((t) => localIso(t, s.tz) === when);
         if (slot === undefined) throw new Error(`${when} is not free any more`);
-        const ev = await cal.book({ start: slot, end: slot + s.minutes * 60000, title: s.title, email, chat, name, tz: s.tz });
+        const site = siteUrl(link) ?? (store ? await storeLinkIn(store, chat) : undefined);
+        const ev = await cal.book({ start: slot, end: slot + s.minutes * 60000, title: s.title, email, chat, name, tz: s.tz, store: site });
         // the system's confirmation replaces Zaid's own wording, so the merchant reads it once
         return `تم حجز موعدنا ${slotLabel(slot, s.tz)} بإذن الله، ووصلتك دعوة على ${email}.${meetLine(ev)}`;
       } catch (e) {
@@ -88,6 +89,32 @@ ${list}`;
 }
 
 const EMAILS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+// links and bare domains, but not the domain of an email address
+const SITES = /(?<![@\w.-])(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'\]]*)?/gi;
+// links that are never a merchant's store
+const NOT_STORE = /(^|\.)(google\.com|youtube\.com|youtu\.be|wa\.me|whatsapp\.com|ziadah\.app|instagram\.com|tiktok\.com|x\.com|twitter\.com|snapchat\.com|facebook\.com|hotmail\.com|gmail\.com|outlook\.com)$/i;
+
+/** a store link as https://..., or undefined when it is not one */
+export function siteUrl(raw?: string): string | undefined {
+  if (!raw) return undefined;
+  try {
+    const u = new URL(/^https?:\/\//i.test(raw) ? raw : `https://${raw}`);
+    if (!/\.[a-z]{2,}$/i.test(u.hostname) || NOT_STORE.test(u.hostname)) return undefined;
+    return u.toString().replace(/\/$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
+/** the last store link the merchant wrote in the chat */
+async function storeLinkIn(store: Store, chat: string): Promise<string | undefined> {
+  const msgs = (await store.messages(chat, 60)).filter((m) => m.direction === "in").reverse();
+  for (const m of msgs) for (const raw of (`${m.text ?? ""}`.match(SITES) ?? []).reverse()) {
+    const u = siteUrl(raw.replace(/[.,!?؟،:;)]+$/, ""));
+    if (u) return u;
+  }
+  return undefined;
+}
 // Saudi mobiles as booking forms write them: +966 5x, 00966 5x, 05x
 const PHONES = /(?:\+|00)?966[\s-]?5[\d\s-]{8,12}|\b05[\d\s-]{8,11}/g;
 

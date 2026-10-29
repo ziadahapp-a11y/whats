@@ -850,6 +850,32 @@ test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to
   assert.equal(booked.length, 1);
   assert.equal(await m.apply("بدون حجز", "966500000001"), "بدون حجز");
   assert.equal(await meetings(new MemoryRawKV(), undefined, () => now, cal).context(), "");
+  assert.match(ctx, /store link/);
+});
+
+test("the merchant's store link goes into the meeting details", async () => {
+  const { meetings, siteUrl } = await import("./flows/meetings");
+  assert.equal(siteUrl("albaraka.sa"), "https://albaraka.sa");
+  assert.equal(siteUrl("https://zid.store/albaraka/"), "https://zid.store/albaraka");
+  assert.equal(siteUrl("hotmail.com"), undefined);
+  assert.equal(siteUrl("https://meet.google.com/x"), undefined);
+  assert.equal(siteUrl("لا"), undefined);
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
+  const store = new Store(new MemoryKV());
+  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const booked: any[] = [];
+  const cal: any = { busy: async () => [], events: async () => [], book: async (o: any) => (booked.push(o), { id: "e" + booked.length, start: o.start, end: o.end }) };
+  const m = meetings(base, store, () => now, cal);
+  await m.apply("[[BOOK 2026-10-29T10:45 sara@shop.sa https://sara.store]]", "966500000001");
+  assert.equal(booked[0].store, "https://sara.store");
+  // no link in the marker: the last store link the merchant wrote, never the domain of their email
+  await store.saveMessage({ id: "s1", waId: "966500000002", direction: "in", type: "text", text: "متجري albaraka.sa", timestamp: now / 1000 - 60 });
+  await store.saveMessage({ id: "s2", waId: "966500000002", direction: "in", type: "text", text: "Wmsb1@hotmail.com", timestamp: now / 1000 });
+  await m.apply("[[BOOK 2026-10-29T11:30 wmsb1@hotmail.com]]", "966500000002");
+  assert.equal(booked[1].store, "https://albaraka.sa");
+  await m.apply("[[BOOK 2026-11-01T10:00 x@y.sa]]", "966500000003");
+  assert.equal(booked[2].store, undefined);
 });
 
 test("a merchant who already has a meeting gets its time and link, never a second booking", async () => {
