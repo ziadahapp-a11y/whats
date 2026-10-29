@@ -739,3 +739,54 @@ test("webhook: approve mode makes drafts, conditions can route on hook fields, p
   assert.equal(await runWebhookFlow(gated, { to: "966500000001", text: "عادي", data: {} }, deps, NOW), null, "no action, no log");
   await assert.rejects(() => runWebhookFlow(hookFlow(), { data: {} }, { ...deps, paused: true }, NOW), /paused/);
 });
+
+test("a link in an official reply becomes one cta_url button, with a text fallback", async () => {
+  const { linkButton, plainLinks, ctaPayload, DEFAULT_LINK_LABEL } = await import("./flows/links");
+  assert.deepEqual(linkButton("تقدر تشوف الباقات هنا: [شوف الباقات](https://ziadah.app/pricing)"), { body: "تقدر تشوف الباقات هنا: شوف الباقات", label: "شوف الباقات", url: "https://ziadah.app/pricing" });
+  assert.deepEqual(linkButton("الشرح كامل هنا:\nhttps://ziadah.app/help/a1."), { body: "الشرح كامل هنا", label: DEFAULT_LINK_LABEL, url: "https://ziadah.app/help/a1" });
+  assert.equal(linkButton("ما فيه رابط"), null);
+  assert.equal(linkButton("http://insecure.example"), null);
+  const two = linkButton("[أ](https://a.example/x) و [ب](https://b.example/y)")!;
+  assert.equal(two.url, "https://a.example/x");
+  assert.equal(two.body, "أ و ب: https://b.example/y");
+  assert.equal(linkButton("[اسم طويل جدا جدا جدا جدا للزر](https://a.example)")!.label, DEFAULT_LINK_LABEL);
+  assert.equal(plainLinks("[شوف](https://a.example)"), "شوف: https://a.example");
+  assert.deepEqual(ctaPayload({ body: "b", label: "l", url: "https://u.example" }).interactive.action, { name: "cta_url", parameters: { display_text: "l", url: "https://u.example" } });
+
+  const { officialChannel } = await import("./flows/sync");
+  const store = new Store(new MemoryKV());
+  await store.saveMessage({ id: "in1", waId: "966500000009", direction: "in", type: "text", text: "hi", timestamp: Math.floor(Date.now() / 1000) });
+  const sent: Record<string, unknown>[] = [];
+  let reject = false;
+  const graph = {
+    sendMessage: async (_to: string, p: Record<string, unknown>) => {
+      if (reject && p.type === "interactive") throw new Error("rejected");
+      sent.push(p);
+      return { messageId: `m${sent.length}` };
+    },
+    markRead: async () => ({}),
+  };
+  const ch = officialChannel({ base: new MemoryRawKV(), store, graph, normalize: (s) => s, state: new MemoryRawKV() });
+  await ch.sendText("966500000009", "اقرأ [المقال](https://ziadah.app/a)");
+  assert.equal(sent[0].type, "interactive");
+  reject = true;
+  await ch.sendText("966500000009", "اقرأ [المقال](https://ziadah.app/a)");
+  assert.deepEqual(sent[1], { type: "text", text: { body: "اقرأ المقال: https://ziadah.app/a" } });
+  const saved = await store.messages("966500000009", 5);
+  assert.ok(saved.some((m) => m.type === "interactive" && m.text?.includes("[المقال: https://ziadah.app/a]")));
+});
+
+test("official ai replies are told how to name link buttons; personal ones are not", async () => {
+  const { LINK_RULE } = await import("./flows/links");
+  for (const kind of ["official", "personal"] as const) {
+    const systems: string[] = [];
+    const ai: AiClient = async (r) => (systems.push(r.system), "تمام");
+    const { deps, store } = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"] })], { ai });
+    deps.channel = { ...deps.channel, kind };
+    const m = msg();
+    await store.saveMessage(m);
+    await runFlows(deps, [m], NOW);
+    assert.equal(systems.length, 1, kind);
+    assert.equal(systems[0].includes(LINK_RULE), kind === "official", kind);
+  }
+});

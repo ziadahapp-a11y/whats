@@ -12,6 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
+import { LINK_RULE } from "./links";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
 export type Channel = {
@@ -268,6 +269,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     const kb = await d.knowledge(`${recent}\n${a.prompt ?? ""}`.trim());
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
+  if (a.type === "ai_reply" && d.channel.kind === "official") system += `\n\n${LINK_RULE}`;
   const task = a.type === "ai_reply" ? "Write my next reply to the last message from the other person." : "Do what the instructions above ask, using the conversation(s).";
   const out = await d.ai({ system, user: `<conversation>\n${transcript}\n</conversation>\n\n${task}`, maxTokens: a.maxTokens, model: a.model, provider: a.provider });
   return out.trim();

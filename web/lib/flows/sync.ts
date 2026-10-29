@@ -13,6 +13,7 @@ import { fileUrl, loadFile, publicBase, saveFile } from "../files";
 import { knowledgeContext } from "../kb/store";
 import { runFlows, type Channel, type EngineDeps } from "./engine";
 import { flowsFor, isPaused } from "./storage";
+import { ctaPayload, linkButton, plainLinks } from "./links";
 import type { StoredMessage } from "../store";
 
 const num = (v: string | undefined, fallback: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
@@ -66,8 +67,21 @@ export function officialChannel(io: OfficialIO): Channel {
     sendText: async (chat, text, replyTo) => {
       const w = await io.store.window(chat);
       if (!w.windowOpen) throw new Error("the 24-hour window is closed; use a template");
-      const res = await io.graph.sendMessage(chat, { type: "text", text: { body: text } }, replyTo);
-      await io.store.saveMessage({ id: res.messageId, waId: chat, direction: "out", type: "text", text, timestamp: Math.floor(Date.now() / 1000), status: "sent", source: "api", replyTo });
+      const save = (id: string, type: string, body: string) =>
+        io.store.saveMessage({ id, waId: chat, direction: "out", type, text: body, timestamp: Math.floor(Date.now() / 1000), status: "sent", source: "api", replyTo });
+      const button = linkButton(text);
+      if (button) {
+        try {
+          const res = await io.graph.sendMessage(chat, ctaPayload(button), replyTo);
+          await save(res.messageId, "interactive", `${button.body}\n[${button.label}: ${button.url}]`);
+          return res.messageId;
+        } catch {
+          // a rejected button must not lose the reply: send it as text below
+        }
+      }
+      const body = plainLinks(text);
+      const res = await io.graph.sendMessage(chat, { type: "text", text: { body } }, replyTo);
+      await save(res.messageId, "text", body);
       return res.messageId;
     },
     react: async (chat, msg, emoji) => void (await io.graph.sendMessage(chat, { type: "reaction", reaction: { message_id: msg.id, emoji } })),
