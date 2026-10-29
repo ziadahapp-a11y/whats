@@ -779,6 +779,47 @@ export async function runWebhookFlow(flow: Flow, input: WebhookInput, d: EngineD
   return entry;
 }
 
+// ---------- unanswered chats ----------
+
+const hasAiReply = (f: Flow) => f.actions.some((a) => a.type === "ai_reply") || !!f.graph?.nodes.some((n) => n.kind === "action" && n.action.type === "ai_reply");
+
+/**
+ * Chats whose last message is the other person's and got no answer (the AI skipped it, failed, or it came in
+ * while flows were off) get one more pass through the AI-reply flows, while the 24-hour window still has
+ * at least half an hour left. The person waits `minAgeMinutes` first so a live reply or the team can answer.
+ */
+export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: { minAgeMinutes?: number; max?: number; scan?: number } = {}): Promise<LogEntry[]> {
+  const { minAgeMinutes = 10, max = 5, scan = 100 } = opts;
+  const flows = d.flows.filter((f) => f.trigger.type === "message" && f.trigger.direction !== "out" && f.trigger.chats !== "group" && hasAiReply(f));
+  if (d.paused || !flows.length) return [];
+  const logs: LogEntry[] = [];
+  const nowS = Math.floor(now / 1000);
+  let done = 0;
+  for (const c of await d.store.conversations(scan, undefined, nowS)) {
+    if (done >= max || (d.deadline && Date.now() > d.deadline)) break;
+    const m = c.last;
+    if (!m || m.direction !== "in" || m.type === "reaction" || c.waId.endsWith("@g.us")) continue;
+    if (nowS - m.timestamp < minAgeMinutes * 60 || !c.windowClosesAt || c.windowClosesAt - nowS < 1800) continue;
+    const chatName = await d.store.getName(c.waId);
+    const tags = await getTags(d.state, c.waId);
+    for (const flow of flows) {
+      const x = makeCtx(flow, d, now, m, chatName, tags);
+      try {
+        if (!(await matches(flow, x, d)).ok) continue;
+        if (!(await d.state.set(`flow:catch:${flow.id}:${m.id}`, "1", { ex: 7 * 86400, nx: true }))) continue;
+        done++;
+        const fired = await fire(flow, x, d);
+        if (fired) logs.push({ ...fired.entry, note: fired.entry.note ?? "reply to an unanswered message" });
+        if (fired?.stop) break;
+      } catch (e) {
+        logs.push({ ...logBase(flow, x, d), status: "error", note: e instanceof Error ? e.message : String(e) });
+      }
+    }
+  }
+  await pushLog(d.state, logs);
+  return logs;
+}
+
 // ---------- dry run for the dashboard ----------
 
 /** `id` and `timestamp` let a replay look the message up in the store (is_first) the way the original run did. */

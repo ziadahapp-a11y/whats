@@ -11,7 +11,7 @@ import { listConnectors } from "../connectors";
 import { connectMcp } from "../mcpclient";
 import { fileUrl, loadFile, publicBase, saveFile } from "../files";
 import { knowledgeContext } from "../kb/store";
-import { runFlows, type Channel, type EngineDeps } from "./engine";
+import { catchUpUnanswered, runFlows, type Channel, type EngineDeps } from "./engine";
 import { flowsFor, isPaused } from "./storage";
 import { ctaPayload, linkButton, plainLinks } from "./links";
 import { sendFollowups } from "./followup";
@@ -106,7 +106,10 @@ export async function runOfficialFlows(fresh: StoredMessage[], io: OfficialIO) {
   const flows = await flowsFor(io.base, "official");
   if (!flows.length || (await isPaused(io.base))) return [];
   const channel = officialChannel(io);
-  const logs = await runFlows({ flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base), meetings: meetings(io.base) }, fresh);
+  const deps: EngineDeps = { flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base), meetings: meetings(io.base) };
+  const logs = await runFlows(deps, fresh);
+  // a merchant whose last message got no answer gets one more look while the window is open
+  logs.push(...(await catchUpUnanswered(deps).catch((e) => (console.error("catch-up failed", e), []))));
   // Every wake-up (a message or the cron ping) also checks for merchants who went quiet and meetings due today.
   await sendFollowups({ store: io.store, state: io.state, channel }).catch((e) => console.error("follow-ups failed", e));
   await sendMeetingReminders({ base: io.base, store: io.store, state: io.state, channel }).catch((e) => console.error("meeting reminders failed", e));

@@ -174,7 +174,20 @@ export const disconnect = (base: RawKV) => base.del(TOKEN);
 
 // ---------- Calendar API ----------
 
-export type CalEvent = { id: string; start: number; end: number; chat?: string; summary?: string; meet?: string };
+export type CalEvent = {
+  id: string;
+  start: number;
+  end: number;
+  /** set on meetings Zaid booked */
+  chat?: string;
+  summary?: string;
+  meet?: string;
+  /** guests other than the calendar owner */
+  emails?: string[];
+  /** description and location, where booking pages put the phone number */
+  text?: string;
+  created?: number;
+};
 
 export class Calendar {
   constructor(private base: RawKV, private env: Env = process.env, private fetchImpl: typeof fetch = fetch) {}
@@ -214,11 +227,11 @@ export class Calendar {
     return toEvent(e);
   }
 
-  /** meetings Zaid booked that start in [from, to) */
-  async booked(from: number, to: number): Promise<CalEvent[]> {
+  /** timed, non-cancelled events that start in [from, to): meetings Zaid booked and any others */
+  async events(from: number, to: number): Promise<CalEvent[]> {
     const q = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });
     const data = await this.api(`/calendars/primary/events?${q}`);
-    return (data.items ?? []).filter((e: any) => e.status !== "cancelled" && e.extendedProperties?.private?.zaidChat).map(toEvent);
+    return (data.items ?? []).filter((e: any) => e.status !== "cancelled" && e.start?.dateTime).map(toEvent).filter((e: CalEvent) => e.start >= from);
   }
 }
 
@@ -229,4 +242,7 @@ const toEvent = (e: any): CalEvent => ({
   chat: e.extendedProperties?.private?.zaidChat,
   summary: e.summary,
   meet: e.hangoutLink ?? e.conferenceData?.entryPoints?.find((p: any) => p.entryPointType === "video")?.uri,
+  emails: (e.attendees ?? []).filter((x: any) => !x.self && !x.resource && x.email).map((x: any) => String(x.email).toLowerCase()),
+  text: `${e.description ?? ""}\n${e.location ?? ""}`,
+  created: e.created ? Date.parse(e.created) : undefined,
 });

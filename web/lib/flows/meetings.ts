@@ -4,7 +4,7 @@
 import type { RawKV } from "../wa/auth";
 import type { Store } from "../store";
 import type { Channel } from "./engine";
-import { Calendar, connection, freeSlots, getSettings, localDay, localIso, atLocal, slotLabel, spread, timeLabel, type Settings } from "../gcal";
+import { Calendar, connection, type CalEvent, freeSlots, getSettings, localDay, localIso, atLocal, slotLabel, spread, timeLabel, type Settings } from "../gcal";
 
 export const HANDOFF = "جاري تحويلك للفريق المختص\n\nان لم تتلقى رد خلال 24 ساعة، فضلاً عاود الإرسال فذلك بسبب كثرة الرسائل أو اجازة الأسبوع";
 const MARKER = /\[\[\s*BOOK\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s+([^\s\]]+)\s*\]\]/i;
@@ -64,27 +64,85 @@ ${list}`;
   };
 }
 
+const EMAILS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
+// Saudi mobiles as booking forms write them: +966 5x, 00966 5x, 05x
+const PHONES = /(?:\+|00)?966[\s-]?5[\d\s-]{8,12}|\b05[\d\s-]{8,11}/g;
+
+function phonesIn(text: string): string[] {
+  return (text.match(PHONES) ?? []).map((p) => {
+    const d = p.replace(/\D/g, "").replace(/^00/, "");
+    return d.startsWith("05") ? `966${d.slice(1)}` : d;
+  }).filter((d) => /^9665\d{8}$/.test(d));
+}
+
+/** The WhatsApp chat a calendar event belongs to: Zaid's own tag, a phone in the booking details, or a guest email the merchant wrote in a chat. */
+export class ChatMatcher {
+  private emails?: Map<string, string>;
+  constructor(private store: Store, private scan = 100) {}
+
+  private async emailIndex() {
+    if (this.emails) return this.emails;
+    const map = new Map<string, string>();
+    for (const c of await this.store.conversations(this.scan)) {
+      for (const m of await this.store.messages(c.waId, 60)) {
+        if (m.direction !== "in") continue;
+        for (const e of `${m.text ?? ""}`.match(EMAILS) ?? []) if (!map.has(e.toLowerCase())) map.set(e.toLowerCase(), c.waId);
+      }
+    }
+    return (this.emails = map);
+  }
+
+  async chatFor(ev: CalEvent): Promise<string | undefined> {
+    if (ev.chat) return ev.chat;
+    for (const p of phonesIn(`${ev.text ?? ""}\n${ev.summary ?? ""}`)) if ((await this.store.messages(p, 1)).length) return p;
+    if (!ev.emails?.length) return undefined;
+    const idx = await this.emailIndex();
+    for (const e of ev.emails) if (idx.has(e)) return idx.get(e);
+    return undefined;
+  }
+}
+
+type Deps = { base: RawKV; store: Store; state: RawKV; channel: Channel };
+const meetLine = (ev: CalEvent) => (ev.meet ? `\nرابط الاجتماع: ${ev.meet}` : "");
+
 /**
- * On the meeting day (from 8 in the morning, until 30 minutes before it), one reminder per meeting Zaid booked,
- * only while the merchant's 24-hour window is open.
+ * Meetings in the calendar that belong to a WhatsApp chat (booked by Zaid, from the booking page or by the team):
+ * - a confirmation for one booked in the last two days that Zaid did not book itself (Zaid confirms in its reply);
+ * - on the meeting day, from 8 in the morning until 30 minutes before it, one reminder.
+ * Both only while the merchant's 24-hour window is open.
  */
-export async function sendMeetingReminders(d: { base: RawKV; store: Store; state: RawKV; channel: Channel }, now = Date.now(), cal = new Calendar(d.base)): Promise<string[]> {
+export async function sendMeetingReminders(d: Deps, now = Date.now(), cal = new Calendar(d.base)): Promise<string[]> {
   if (!(await connection(d.base)).connected) return [];
   const s = await getSettings(d.base);
   const today = localDay(now, s.tz);
   const morning = atLocal(today.y, today.m, today.d, "08:00", s.tz);
-  if (now < morning) return [];
   const endOfDay = atLocal(today.y, today.m, today.d, "23:59", s.tz);
+  const match = new ChatMatcher(d.store);
   const sent: string[] = [];
-  for (const ev of await cal.booked(now + 30 * 60000, endOfDay)) {
-    if (!ev.chat) continue;
-    if (!(await d.store.window(ev.chat, Math.floor(now / 1000))).windowOpen) continue;
-    if (!(await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400, nx: true }))) continue;
+  const send = async (chat: string, text: string) => {
     try {
-      await d.channel.sendText(ev.chat, `حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة ${timeLabel(ev.start, s.tz)}${ev.meet ? `\nرابط الاجتماع: ${ev.meet}` : ""}`);
-      sent.push(ev.chat);
+      await d.channel.sendText(chat, text);
+      sent.push(chat);
+      return true;
     } catch (e) {
-      console.error("meeting reminder failed", ev.chat, e);
+      console.error("meeting message failed", chat, e);
+      return false;
+    }
+  };
+  for (const ev of await cal.events(now + 30 * 60000, now + (s.aheadDays + 1) * 86400000)) {
+    const fresh = !ev.chat && !!ev.created && now - ev.created < 2 * 86400000;
+    const isToday = ev.start <= endOfDay && now >= morning;
+    if (!fresh && !isToday) continue;
+    const chat = await match.chatFor(ev);
+    if (!chat || !(await d.store.window(chat, Math.floor(now / 1000))).windowOpen) continue;
+    if (fresh && (await d.state.set(`mc:${ev.id}`, "1", { ex: 30 * 86400, nx: true }))) {
+      // a same-day confirmation already says when; no separate reminder after it
+      if (isToday) await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400 });
+      await send(chat, `حياك الله، تم تأكيد موعدنا ${slotLabel(ev.start, s.tz)} بإذن الله${meetLine(ev)}`);
+      continue;
+    }
+    if (isToday && (await d.state.set(`mr:${ev.id}`, "1", { ex: 3 * 86400, nx: true }))) {
+      await send(chat, `حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة ${timeLabel(ev.start, s.tz)}${meetLine(ev)}`);
     }
   }
   return sent;

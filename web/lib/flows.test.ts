@@ -861,7 +861,7 @@ test("meeting reminder goes once on the day, only after 8am and inside the 24h w
   const sent: string[] = [];
   const channel: Channel = { account: "official", kind: "official", sendText: async (c, t) => (sent.push(`${c}|${t}`), "x"), react: async () => {}, markRead: async () => {}, resolveTarget: (s) => s };
   const start = Date.UTC(2026, 9, 29, 11, 0); // 14:00 Riyadh
-  const cal: any = { booked: async () => [{ id: "e1", start, end: start + 1800000, chat: "966500000001", meet: "https://meet.google.com/x" }, { id: "e2", start, end: start + 1800000, chat: "966500000002" }] };
+  const cal: any = { events: async () => [{ id: "e1", start, end: start + 1800000, chat: "966500000001", meet: "https://meet.google.com/x" }, { id: "e2", start, end: start + 1800000, chat: "966500000002" }] };
   await store.saveMessage({ id: "i1", waId: "966500000001", direction: "in", type: "text", text: "تمام", timestamp: Math.floor(Date.UTC(2026, 9, 28, 20, 0) / 1000) });
   await store.saveMessage({ id: "i2", waId: "966500000002", direction: "in", type: "text", text: "تمام", timestamp: Math.floor(Date.UTC(2026, 9, 27, 20, 0) / 1000) }); // window closed
   const d = { base, store, state, channel };
@@ -869,4 +869,55 @@ test("meeting reminder goes once on the day, only after 8am and inside the 24h w
   assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 5, 30), cal), ["966500000001"]);
   assert.match(sent[0], /^966500000001\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 م\nرابط الاجتماع: https:\/\/meet\.google\.com\/x$/);
   assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 6, 0), cal), []);
+});
+
+test("meetings booked outside Zaid are matched to their chat by phone or email and confirmed once", async () => {
+  const { sendMeetingReminders } = await import("./flows/meetings");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
+  const store = new Store(new MemoryKV());
+  const state = new MemoryRawKV();
+  const sent: string[] = [];
+  const channel: Channel = { account: "official", kind: "official", sendText: async (c, t) => (sent.push(`${c}|${t}`), "x"), react: async () => {}, markRead: async () => {}, resolveTarget: (s) => s };
+  const now = Date.UTC(2026, 9, 29, 6, 0); // 09:00 Riyadh, Thursday
+  const ts = Math.floor((now - 3600000) / 1000);
+  await store.saveMessage({ id: "a", waId: "966500000001", direction: "in", type: "text", text: "حجزت من الرابط", timestamp: ts });
+  await store.saveMessage({ id: "b", waId: "966500000002", direction: "in", type: "text", text: "ايميلي Sara@Shop.sa", timestamp: ts });
+  const sunday = Date.UTC(2026, 10, 1, 8, 0); // Sun 11:00 Riyadh
+  const today = Date.UTC(2026, 9, 29, 11, 0); // Thu 14:00 Riyadh
+  const cal: any = {
+    events: async () => [
+      { id: "p1", start: sunday, end: sunday + 1800000, created: now - 600000, text: "Phone number: +966 50 000 0001", emails: ["other@x.com"], meet: "https://meet.google.com/p" },
+      { id: "p2", start: today, end: today + 1800000, created: now - 600000, text: "", emails: ["sara@shop.sa"] },
+      { id: "p3", start: today, end: today + 1800000, created: now - 600000, text: "", emails: [] }, // personal, no guest
+      { id: "p4", start: today, end: today + 1800000, created: now - 9 * 86400000, text: "", emails: ["sara@shop.sa"] }, // old booking: reminder only
+    ],
+  };
+  const d = { base, store, state, channel };
+  const first = await sendMeetingReminders(d, now, cal);
+  assert.deepEqual(first, ["966500000001", "966500000002", "966500000002"]);
+  assert.match(sent[0], /^966500000001\|حياك الله، تم تأكيد موعدنا .+ بإذن الله\nرابط الاجتماع: https:\/\/meet\.google\.com\/p$/);
+  assert.match(sent[1], /^966500000002\|حياك الله، تم تأكيد موعدنا/);
+  assert.match(sent[2], /^966500000002\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 م$/);
+  assert.deepEqual(await sendMeetingReminders(d, now + 900000, cal), []);
+});
+
+test("an unanswered last message gets one more AI pass inside the window, after a short wait", async () => {
+  const { catchUpUnanswered } = await import("./flows/engine");
+  const now = NOW;
+  const ai: AiClient = async () => "حياك الله، أبشر";
+  const { deps, sent, store } = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"] })], { ai });
+  const s = Math.floor(now / 1000);
+  const chat2 = "966500000002@s.whatsapp.net";
+  const chat3 = "966500000003@s.whatsapp.net";
+  const chat4 = "966500000004@s.whatsapp.net";
+  await store.saveMessage(msg({ id: "u1", timestamp: s - 3 * 3600 })); // unanswered, due
+  await store.saveMessage(msg({ id: "u2", waId: chat2, timestamp: s - 120 })); // too fresh
+  await store.saveMessage(msg({ id: "u3", waId: chat3, timestamp: s - 23.8 * 3600 })); // window nearly closed
+  await store.saveMessage(msg({ id: "u4", waId: chat4, timestamp: s - 3 * 3600 }));
+  await store.saveMessage({ id: "o4", waId: chat4, direction: "out", type: "text", text: "تم", timestamp: s - 3 * 3600 + 60 }); // answered
+  const logs = await catchUpUnanswered(deps, now);
+  assert.equal(logs.length, 1);
+  assert.deepEqual(sent.map((x) => x.chat), [CHAT]);
+  assert.equal((await catchUpUnanswered(deps, now + 60_000)).length, 0); // once per message
 });
