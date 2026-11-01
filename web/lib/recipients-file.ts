@@ -7,6 +7,8 @@
 //   phone         the customer's number (any Saudi spelling)
 //   consent_date  when they registered / agreed, ideally a real Excel date or YYYY-MM-DD
 //   var1, var2…   values for the template's {{1}}, {{2}}… (contiguous from var1)
+//   header_var    optional: this row's value for {{1}} in a text header (overrides the campaign form)
+//   button_var    optional: this row's value for {{1}} at the end of a link button (overrides the campaign form)
 
 import ExcelJS from "exceljs";
 import { Readable } from "node:stream";
@@ -15,6 +17,8 @@ import type { RecipientRow } from "./preflight";
 export class RecipientsFileError extends Error {}
 
 export type ParsedRow = RecipientRow & {
+  headerParam?: string;
+  buttonParam?: string;
   /** Row number in the spreadsheet (header is row 1), to point at it in reports. */
   sourceRow: number;
 };
@@ -23,6 +27,9 @@ export type ParsedRecipients = {
   rows: ParsedRow[];
   /** Number of varN columns found, to compare with the template's variable count. */
   paramCount: number;
+  /** Whether the file has a header_var / button_var column. */
+  hasHeaderVar: boolean;
+  hasButtonVar: boolean;
   warnings: string[];
 };
 
@@ -40,6 +47,8 @@ const DEFAULT_MAX_BYTES = 5 * 1024 * 1024;
 
 const PHONE_HEADERS = new Set(["phone", "mobile", "phone_number", "الجوال", "رقم_الجوال", "الهاتف", "رقم_الهاتف"]);
 const CONSENT_HEADERS = new Set(["consent_date", "consent_at", "registered_at", "signup_date", "تاريخ_التسجيل", "تاريخ_الموافقة"]);
+const HEADER_VAR_HEADERS = new Set(["header_var", "متغير_العنوان"]);
+const BUTTON_VAR_HEADERS = new Set(["button_var", "url_var", "متغير_الزر"]);
 
 const headerKey = (s: unknown) =>
   String(s ?? "")
@@ -117,6 +126,8 @@ export async function parseRecipientsFile(data: Uint8Array, filename: string, op
   // header row
   let phoneCol = 0;
   let consentCol = 0;
+  let headerVarCol = 0;
+  let buttonVarCol = 0;
   const varCols = new Map<number, number>(); // n of varN -> column
   const seen: string[] = [];
   ws.getRow(1).eachCell({ includeEmpty: false }, (cell, col) => {
@@ -124,6 +135,8 @@ export async function parseRecipientsFile(data: Uint8Array, filename: string, op
     seen.push(key);
     if (PHONE_HEADERS.has(key)) phoneCol ||= col;
     else if (CONSENT_HEADERS.has(key)) consentCol ||= col;
+    else if (HEADER_VAR_HEADERS.has(key)) headerVarCol ||= col;
+    else if (BUTTON_VAR_HEADERS.has(key)) buttonVarCol ||= col;
     else if (/^var\d+$/.test(key)) varCols.set(Number(key.slice(3)), col);
   });
   const missing = [!phoneCol && "phone", !consentCol && "consent_date"].filter(Boolean);
@@ -144,17 +157,21 @@ export async function parseRecipientsFile(data: Uint8Array, filename: string, op
     const phone = plain(row.getCell(phoneCol).value);
     const consentAt = consentOf(row.getCell(consentCol).value);
     const params = Array.from({ length: paramCount }, (_, i) => textOf(row.getCell(varCols.get(i + 1)!).value));
-    if (phone === null && consentAt === undefined && params.every((p) => p === "")) continue; // blank row
+    const headerParam = headerVarCol ? textOf(row.getCell(headerVarCol).value) : "";
+    const buttonParam = buttonVarCol ? textOf(row.getCell(buttonVarCol).value) : "";
+    if (phone === null && consentAt === undefined && params.every((p) => p === "") && !headerParam && !buttonParam) continue; // blank row
     if (rows.length >= maxRows) throw new RecipientsFileError(`More than ${maxRows} rows; split the file into smaller ones.`);
     rows.push({
       phone: phone instanceof Date ? isoDay(phone) : phone,
       consentSource: opts.consentSource ?? "dashboard",
       consentAt,
       params,
+      ...(headerParam ? { headerParam } : {}),
+      ...(buttonParam ? { buttonParam } : {}),
       sourceRow: r,
     });
   }
   if (rows.length === 0) throw new RecipientsFileError("The file has a header but no customer rows.");
 
-  return { rows, paramCount, warnings };
+  return { rows, paramCount, hasHeaderVar: !!headerVarCol, hasButtonVar: !!buttonVarCol, warnings };
 }

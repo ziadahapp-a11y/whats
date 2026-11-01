@@ -89,6 +89,28 @@ test("header aliases and spacing are understood", async () => {
   assert.equal(p.paramCount, 1);
 });
 
+test("optional header_var and button_var columns are read per row", async () => {
+  const data = await xlsx([
+    [
+      ["phone", "consent_date", "var1", "header_var", "متغير_الزر"],
+      ["0501234567", "2026-09-01", "أحمد", "عرض أحمد", "ar/app/1"],
+      ["0502345678", "2026-09-01", "سارة", "", ""],
+    ],
+  ]);
+  const parsed = await parseRecipientsFile(data, "list.xlsx");
+  assert.equal(parsed.hasHeaderVar, true);
+  assert.equal(parsed.hasButtonVar, true);
+  assert.equal(parsed.paramCount, 1);
+  assert.equal(parsed.rows[0].headerParam, "عرض أحمد");
+  assert.equal(parsed.rows[0].buttonParam, "ar/app/1");
+  assert.equal(parsed.rows[1].headerParam, undefined);
+  assert.equal(parsed.rows[1].buttonParam, undefined);
+
+  const plain = await parseRecipientsFile(await xlsx([[["phone", "consent_date"], ["0501234567", "2026-09-01"]]]), "p.xlsx");
+  assert.equal(plain.hasHeaderVar, false);
+  assert.equal(plain.hasButtonVar, false);
+});
+
 test("bad files are refused with a clear reason", async () => {
   await reject(await xlsx([[["phone", "var1"], ["0501234567", "a"]]]), "a.xlsx", /Missing column\(s\): consent_date\. Found: phone, var1/);
   await reject(await xlsx([[["consent_date"], ["2026-01-01"]]]), "a.xlsx", /Missing column\(s\): phone/);
