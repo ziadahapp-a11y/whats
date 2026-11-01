@@ -1,5 +1,5 @@
 import { admin, err } from "@/lib/admin";
-import { advanceCampaign, campaignReport, createDryRun, listCampaigns, resumeCampaign, startCampaign, stopCampaign, templateShape, type MediaKind, type SendOptions } from "@/lib/campaign";
+import { advanceCampaign, campaignReport, createDryRun, listCampaigns, resumeCampaign, startCampaign, stopCampaign } from "@/lib/campaign";
 import { GraphError } from "@/lib/graph";
 import { loadUpload, saveUpload, storageProblem, submitTemplate } from "@/lib/marketing";
 import { normalizeSaudiMobile } from "@/lib/preflight";
@@ -12,16 +12,6 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
 const fail = (message: string, status = 400) => Response.json({ error: message }, { status });
-
-// What Meta accepts in a template header, per kind (Cloud API media limits). Documents are PDF only here.
-const MEDIA_RULES: Record<MediaKind, { mimes: string[]; maxBytes: number; label: string }> = {
-  image: { mimes: ["image/jpeg", "image/png"], maxBytes: 5 * 1024 * 1024, label: "الصورة لازم JPG أو PNG وأقل من 5 ميقا." },
-  video: { mimes: ["video/mp4", "video/3gpp"], maxBytes: 16 * 1024 * 1024, label: "الفيديو لازم MP4 وأقل من 16 ميقا." },
-  document: { mimes: ["application/pdf"], maxBytes: 100 * 1024 * 1024, label: "الملف لازم PDF وأقل من 100 ميقا." },
-};
-const isMediaKind = (k: unknown): k is MediaKind => k === "image" || k === "video" || k === "document";
-
-const str = (v: unknown) => (typeof v === "string" && v.trim() ? v.trim() : undefined);
 
 function explain(e: unknown) {
   if (e instanceof RecipientsFileError) return fail(e.message);
@@ -51,15 +41,7 @@ export async function GET(req: Request) {
     ]);
     return Response.json({
       number,
-      templates: templates.ok
-        ? {
-            ok: true,
-            data: templates.data.map((t) => {
-              const shape = templateShape(t.components ?? []);
-              return { name: t.name, language: t.language, status: t.status, category: t.category, ...("error" in shape ? { unsupported: shape.error } : { shape }) };
-            }),
-          }
-        : templates,
+      templates: templates.ok ? { ok: true, data: templates.data.map((t) => ({ name: t.name, language: t.language, status: t.status, category: t.category })) } : templates,
       campaigns,
     });
   } catch (e) {
@@ -90,32 +72,8 @@ export async function POST(req: Request) {
       case "dry_run": {
         const up = await loadUpload(store, String(body.uploadId ?? ""));
         if (!up) return fail("The uploaded list is gone (they are kept 24 hours); upload it again.", 404);
-        // The header file: a public link, a media id from an earlier dry run, or a file the page just uploaded in pieces.
-        // An uploaded file goes to Meta once; its media id comes back so a second dry run does not upload it again.
-        const send: SendOptions = { headerText: str(body.headerText), buttonParam: str(body.buttonParam) };
-        let mediaId: string | undefined;
-        if (body.media) {
-          const kind = body.media.kind;
-          if (!isMediaKind(kind)) return fail("media.kind must be image, video or document.");
-          const filename = str(body.media.filename);
-          if (body.media.upload) {
-            const id = String(body.media.upload);
-            const file = await loadPieces(a.base, id);
-            if (!file) return fail("الملف ما وصل كامل أو انتهت صلاحيته، اختره مرة ثانية.");
-            try {
-              const rule = MEDIA_RULES[kind];
-              if (!rule.mimes.includes(file.mime) || file.size > rule.maxBytes) return fail(rule.label);
-              mediaId = await graph.uploadMedia(file.bytes, file.mime, file.name);
-              send.media = { kind, id: mediaId, ...(kind === "document" ? { filename: filename || file.name } : {}) };
-            } finally {
-              await dropUpload(a.base, id);
-            }
-          } else {
-            send.media = { kind, link: str(body.media.link), id: str(body.media.id), ...(filename ? { filename } : {}) };
-          }
-        }
-        const r = await createDryRun(deps, { template: { name: String(body.template ?? ""), language: String(body.language ?? "ar") }, rows: up.rows, send });
-        return Response.json({ ...r, ...(mediaId ? { mediaId } : {}) });
+        const r = await createDryRun(deps, { template: { name: String(body.template ?? ""), language: String(body.language ?? "ar") }, rows: up.rows });
+        return Response.json(r);
       }
       case "start": {
         const r = await startCampaign(deps, String(body.id ?? ""), String(body.token ?? ""));

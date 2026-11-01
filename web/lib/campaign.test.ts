@@ -69,68 +69,11 @@ test("a failing check returns no campaign and no token", async () => {
   assert.ok(yellow.checks.some((c) => c.id === "account.quality" && !c.ok));
 
   const media = await createDryRun(setup({ components: [{ type: "HEADER", format: "IMAGE" }, { type: "BODY", text: "x {{1}} y" }] }).deps, { template: TEMPLATE, rows: rows(3) });
-  assert.ok(media.checks.some((c) => c.id === "send.media" && !c.ok));
-
-  const location = await createDryRun(setup({ components: [{ type: "HEADER", format: "LOCATION" }, { type: "BODY", text: "x {{1}} y" }] }).deps, { template: TEMPLATE, rows: rows(3) });
-  assert.ok(location.checks.some((c) => c.id === "template.components" && !c.ok));
+  assert.ok(media.checks.some((c) => c.id === "template.components" && !c.ok));
 
   const small = await createDryRun(setup({ tier: "TIER_250" }).deps, { template: TEMPLATE, rows: rows(300) }); // 250 less the 20% margin is 200
   assert.equal(small.ok, false);
   assert.ok(small.checks.some((c) => c.id === "capacity" && !c.ok));
-});
-
-const RICH = [
-  { type: "HEADER", format: "IMAGE" },
-  { type: "BODY", text: "هلا {{1}}، عرض الصيف لك" },
-  { type: "BUTTONS", buttons: [{ type: "URL", text: "ثبّت", url: "https://apps.salla.sa/{{1}}" }, { type: "QUICK_REPLY", text: "إيقاف" }] },
-];
-
-test("a media header, header value and link value are checked in the dry run", async () => {
-  const noMedia = await createDryRun(setup({ components: RICH }).deps, { template: TEMPLATE, rows: rows(3) });
-  assert.equal(noMedia.ok, false);
-  assert.deepEqual(noMedia.checks.filter((c) => !c.ok).map((c) => c.id).sort(), ["send.button_var", "send.media"]);
-
-  const wrongKind = await createDryRun(setup({ components: RICH }).deps, { template: TEMPLATE, rows: rows(3), send: { media: { kind: "video", link: "https://x.test/a.mp4" }, buttonParam: "ar/app/1" } });
-  assert.ok(wrongKind.checks.some((c) => c.id === "send.media" && !c.ok));
-
-  const http = await createDryRun(setup({ components: RICH }).deps, { template: TEMPLATE, rows: rows(3), send: { media: { kind: "image", link: "http://x.test/a.jpg" }, buttonParam: "ar/app/1" } });
-  assert.ok(http.checks.some((c) => c.id === "send.media" && !c.ok));
-
-  const spaced = await createDryRun(setup({ components: RICH }).deps, { template: TEMPLATE, rows: rows(3), send: { media: { kind: "image", link: "https://x.test/a.jpg" }, buttonParam: "a b" } });
-  assert.ok(spaced.checks.some((c) => c.id === "send.button_var" && !c.ok));
-
-  const extra = await createDryRun(setup().deps, { template: TEMPLATE, rows: rows(3), send: { media: { kind: "image", link: "https://x.test/a.jpg" } } });
-  assert.ok(extra.checks.some((c) => c.id === "send.media" && !c.ok));
-
-  const textHeader = [{ type: "HEADER", format: "TEXT", text: "عرض {{1}}" }, { type: "BODY", text: "هلا {{1}} اليوم" }];
-  const partial = await createDryRun(setup({ components: textHeader }).deps, { template: TEMPLATE, rows: rows(3).map((r, i) => (i === 1 ? r : { ...r, headerParam: "خاص" })) });
-  assert.ok(partial.checks.some((c) => c.id === "send.header_var" && !c.ok && c.message.includes("rows 3")));
-  const long = await createDryRun(setup({ components: textHeader }).deps, { template: TEMPLATE, rows: rows(3), send: { headerText: "x".repeat(61) } });
-  assert.ok(long.checks.some((c) => c.id === "send.header_var" && !c.ok));
-});
-
-test("the send carries the media header, per-row header and link values, with form fallbacks", async () => {
-  const t = setup({ components: [{ type: "HEADER", format: "TEXT", text: "عرض {{1}}" }, ...RICH.slice(1)] });
-  const list = rows(6).map((r, i) => (i === 0 ? { ...r, headerParam: " خاص ", buttonParam: "ar/app/9" } : r));
-  const dry = await createDryRun(t.deps, { template: TEMPLATE, rows: list, send: { headerText: "الصيف", buttonParam: "ar/app/1099604538", media: { kind: "image", link: " " } } });
-  assert.equal(dry.ok, true, JSON.stringify(dry.checks.filter((c) => !c.ok)));
-  assert.equal((await startCampaign(t.deps, dry.campaignId!, dry.confirmToken!)).ok, true);
-  await advanceCampaign(t.deps, dry.campaignId!, fast);
-  assert.ok(t.g.sends.length >= 2); // the pilot goes first
-  const first = t.g.sends[0].payload.template.components;
-  assert.deepEqual(first[0], { type: "header", parameters: [{ type: "text", text: "خاص" }] });
-  assert.deepEqual(first[1], { type: "body", parameters: [{ type: "text", text: "عميل1" }] });
-  assert.deepEqual(first[2], { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: "ar/app/9" }] });
-  const second = t.g.sends[1].payload.template.components;
-  assert.equal(second[0].parameters[0].text, "الصيف");
-  assert.equal(second[2].parameters[0].text, "ar/app/1099604538");
-
-  const d = setup({ components: [{ type: "HEADER", format: "DOCUMENT" }, { type: "BODY", text: "هلا {{1}} اليوم" }] });
-  const dd = await createDryRun(d.deps, { template: TEMPLATE, rows: rows(5), send: { media: { kind: "document", id: "media-1", filename: "عرض.pdf" } } });
-  assert.equal(dd.ok, true, JSON.stringify(dd.checks.filter((c) => !c.ok)));
-  await startCampaign(d.deps, dd.campaignId!, dd.confirmToken!);
-  await advanceCampaign(d.deps, dd.campaignId!, fast);
-  assert.deepEqual(d.g.sends[0].payload.template.components[0], { type: "header", parameters: [{ type: "document", document: { id: "media-1", filename: "عرض.pdf" } }] });
 });
 
 test("start needs the right token, once", async () => {

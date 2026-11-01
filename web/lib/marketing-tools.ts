@@ -152,7 +152,7 @@ export function registerMarketingTools(server: McpServer, { graph, store, cfg }:
     {
       title: "Check a campaign without sending",
       description:
-        "Screens a customer list for a marketing campaign and sends NOTHING. Checks the number (connected, verified, GREEN quality), the template (approved MARKETING; a media header, a {{1}} in a text header and a {{1}} at the end of a link button are filled from the options below), the messaging limit, and every recipient (Saudi mobile, consent, opt-out, 7-day cooldown, variable values). Use upload_id from the dashboard upload, or rows for a small list. When everything passes it returns a campaign_id and a confirm_token. Show the person the summary and the blocked rows before going further.",
+        "Screens a customer list for a marketing campaign and sends NOTHING. Checks the number (connected, verified, GREEN quality), the template (approved MARKETING, body variables only), the messaging limit, and every recipient (Saudi mobile, consent, opt-out, 7-day cooldown, variable values). Use upload_id from the dashboard upload, or rows for a small list. When everything passes it returns a campaign_id and a confirm_token. Show the person the summary and the blocked rows before going further.",
       inputSchema: z.object({
         template_name: z.string(),
         language: z.string().default("ar"),
@@ -162,16 +162,10 @@ export function registerMarketingTools(server: McpServer, { graph, store, cfg }:
           .max(200)
           .optional()
           .describe("for small lists only; each row asserts the customer consented through the dashboard"),
-        header_media: z
-          .object({ kind: z.enum(["image", "video", "document"]), link: z.string().url().describe("public https link to the file"), filename: z.string().optional().describe("shown for a document") })
-          .optional()
-          .describe("the file for a template with an image, video or document header"),
-        header_text: z.string().optional().describe("value for {{1}} in a text header; a header_var column in the list overrides it per row"),
-        button_param: z.string().optional().describe("value added at the end of a link button's URL ({{1}}); a button_var column in the list overrides it per row"),
       }),
       annotations: WRITE,
     },
-    async ({ template_name, language, upload_id, rows, header_media, header_text, button_param }) => {
+    async ({ template_name, language, upload_id, rows }) => {
       const problem = guard();
       if (problem) return fail(problem);
       if (!!upload_id === !!rows) return fail("Give exactly one of upload_id or rows.");
@@ -184,7 +178,7 @@ export function registerMarketingTools(server: McpServer, { graph, store, cfg }:
         } else {
           list = rows!.map((r, i) => ({ phone: r.phone, consentSource: "dashboard", consentAt: r.consent_date, params: r.params, sourceRow: i + 1 }));
         }
-        const r = await createDryRun(deps, { template: { name: template_name, language }, rows: list, send: { media: header_media, headerText: header_text, buttonParam: button_param } });
+        const r = await createDryRun(deps, { template: { name: template_name, language }, rows: list });
         const { blocked, ...rest } = r;
         return json({ ...rest, blocked: blocked.map((b) => ({ sourceRow: b.sourceRow, reason: b.reason, detail: b.detail })) });
       } catch (e) {

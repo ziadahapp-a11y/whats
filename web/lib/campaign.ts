@@ -28,26 +28,10 @@ export type CampaignStatus = "dry_run" | "running" | "waiting" | "halted" | "com
 export type CampaignRecipient = {
   phone: string;
   params: string[];
-  /** This customer's value for a {{1}} in the template header; overrides the campaign-wide one. */
-  headerParam?: string;
-  /** This customer's value for the end of a URL button's link; overrides the campaign-wide one. */
-  buttonParam?: string;
   sourceRow?: number;
   consentSource: string;
   /** ISO string */
   consentAt: string;
-};
-
-/** A media header's file: a public https link, or a media id from uploading the file to Meta. */
-export type CampaignMedia = { kind: MediaKind; link?: string; id?: string; filename?: string };
-
-/** What a send needs beyond the body variables, chosen once for the whole campaign. */
-export type SendOptions = {
-  media?: CampaignMedia;
-  /** Value for the header's {{1}} when the list has no header_var column (or a row leaves it empty). */
-  headerText?: string;
-  /** Value for the end of every URL button link that has {{1}}, when the row has none. */
-  buttonParam?: string;
 };
 
 type Campaign = {
@@ -55,9 +39,6 @@ type Campaign = {
   createdAt: number;
   status: CampaignStatus;
   template: { name: string; language: string; paramCount: number };
-  /** The template's header and buttons as the send has to fill them. Absent on campaigns from before media support. */
-  shape?: TemplateShape;
-  send?: SendOptions;
   /** One-time token from the dry run; removed when the campaign starts. */
   confirmToken?: string;
   total: number;
@@ -188,120 +169,36 @@ async function refreshStatuses(store: Store, outcomes: Outcome[], recent = outco
 
 // -- template ----------------------------------------------------------------
 
-export type MediaKind = "image" | "video" | "document";
-
-/** The parts of a template that need a value at send time, beyond the body variables. */
-export type TemplateShape = {
-  header: "none" | "text" | "text_var" | MediaKind;
-  /** Indexes (in the template's button list) of URL buttons whose link ends with {{1}}. */
-  urlVars: number[];
-};
-
-const MEDIA_FORMATS: Record<string, MediaKind> = { IMAGE: "image", VIDEO: "video", DOCUMENT: "document" };
-
-/** Reads a template's components. Returns a reason instead when a part needs something campaigns cannot send. */
-export function templateShape(components: any[]): TemplateShape | { error: string } {
-  const shape: TemplateShape = { header: "none", urlVars: [] };
-  for (const c of components) {
-    if (!["HEADER", "BODY", "FOOTER", "BUTTONS"].includes(c.type)) return { error: `Template has a ${c.type} component, which campaigns do not support yet.` };
-    if (c.type === "HEADER") {
-      if (c.format === "TEXT" || !c.format) shape.header = /\{\{/.test(c.text ?? "") ? "text_var" : "text";
-      else if (MEDIA_FORMATS[c.format]) shape.header = MEDIA_FORMATS[c.format];
-      else return { error: `Template has a ${c.format} header, which campaigns do not support yet.` };
-    }
-    if (c.type === "BUTTONS") {
-      (c.buttons ?? []).forEach((b: any, i: number) => {
-        if (b.type === "URL" && /\{\{/.test(b.url ?? "")) shape.urlVars.push(i);
-      });
-      const bad = (c.buttons ?? []).find((b: any) => !["QUICK_REPLY", "PHONE_NUMBER", "URL"].includes(b.type));
-      if (bad) return { error: `Template has a ${bad.type} button, which campaigns do not support yet.` };
-    }
-  }
-  return shape;
-}
-
-/** Kept for callers that only need a yes or no on the template's components. */
+/** Campaigns can send body variables only; anything needing a send-time parameter is refused up front. */
 export function unsupportedReason(components: any[]): string | null {
-  const s = templateShape(components);
-  return "error" in s ? s.error : null;
+  for (const c of components) {
+    if (!["HEADER", "BODY", "FOOTER", "BUTTONS"].includes(c.type)) return `Template has a ${c.type} component, which campaigns do not support yet.`;
+    if (c.type === "HEADER" && c.format !== "TEXT") return `Template has a ${c.format} header that needs a media parameter when sending, which campaigns do not support yet.`;
+    if (c.type === "HEADER" && /\{\{/.test(c.text ?? "")) return "Template header has a variable, which campaigns do not support yet.";
+    if (c.type === "BUTTONS") {
+      for (const b of c.buttons ?? []) {
+        if (!["QUICK_REPLY", "PHONE_NUMBER", "URL"].includes(b.type)) return `Template has a ${b.type} button, which campaigns do not support yet.`;
+        if (b.type === "URL" && /\{\{/.test(b.url ?? "")) return "Template has a URL button with a variable, which campaigns do not support yet.";
+      }
+    }
+  }
+  return null;
 }
 
-const HEADER_TEXT_MAX = 60; // Meta's limit for the whole text header
-const BAD_VALUE = /[\n\r\t]| {4,}/;
-
-/** Problems with the campaign-wide send options or the per-row values the template needs. Each is a failing check. */
-export function sendInputChecks(shape: TemplateShape, send: SendOptions | undefined, rows: readonly { headerParam?: string; buttonParam?: string; sourceRow?: number }[]): PreflightCheck[] {
-  const out: PreflightCheck[] = [];
-  const kind = shape.header;
-  const media = send?.media;
-  const rowsList = (missing: typeof rows) => missing.slice(0, 10).map((r) => r.sourceRow ?? "?").join(", ") + (missing.length > 10 ? "…" : "");
-
-  if (kind === "image" || kind === "video" || kind === "document") {
-    if (!media || (!media.link && !media.id)) out.push({ id: "send.media", ok: false, message: `The template has a ${kind} header: add the ${kind} as a public https link or upload the file.` });
-    else if (media.kind !== kind) out.push({ id: "send.media", ok: false, message: `The template's header is a ${kind}, but the file given is a ${media.kind}.` });
-    else if (media.link && !/^https:\/\/\S+$/.test(media.link)) out.push({ id: "send.media", ok: false, message: "The media link must be a public https:// address." });
-  } else if (media && (media.link || media.id)) {
-    out.push({ id: "send.media", ok: false, message: "The template has no media header, so the file cannot be sent with it. Remove it or choose a template with an image, video or document header." });
-  }
-
-  if (kind === "text_var") {
-    const fallback = send?.headerText?.trim() ?? "";
-    const missing = rows.filter((r) => !(r.headerParam?.trim() || fallback));
-    if (missing.length) out.push({ id: "send.header_var", ok: false, message: `The template header has {{1}}: fill the header value in the campaign form or a header_var column. Missing in rows ${rowsList(missing)}.` });
-    const values = [fallback, ...rows.map((r) => r.headerParam ?? "")].filter(Boolean);
-    if (values.some((v) => v.length > HEADER_TEXT_MAX || BAD_VALUE.test(v))) out.push({ id: "send.header_var", ok: false, message: `A header value is longer than ${HEADER_TEXT_MAX} characters or contains a newline or tab.` });
-  }
-
-  if (shape.urlVars.length) {
-    const fallback = send?.buttonParam?.trim() ?? "";
-    const missing = rows.filter((r) => !(r.buttonParam?.trim() || fallback));
-    if (missing.length) out.push({ id: "send.button_var", ok: false, message: `The template's link button ends with {{1}}: fill the link value in the campaign form or a button_var column. Missing in rows ${rowsList(missing)}.` });
-    const values = [fallback, ...rows.map((r) => r.buttonParam ?? "")].filter(Boolean);
-    if (values.some((v) => /\s/.test(v.trim()) || v.length > 2000)) out.push({ id: "send.button_var", ok: false, message: "A link value contains spaces or is too long; it is added to the end of the link as is." });
-  }
-  return out;
-}
-
-function templateMessage(t: Campaign["template"], r: Pick<CampaignRecipient, "params" | "headerParam" | "buttonParam">, shape?: TemplateShape, send?: SendOptions) {
-  const components: any[] = [];
-  if (shape && (shape.header === "image" || shape.header === "video" || shape.header === "document") && send?.media) {
-    const m = send.media;
-    const file: Record<string, string> = m.id ? { id: m.id } : { link: m.link! };
-    if (shape.header === "document" && m.filename) file.filename = m.filename;
-    components.push({ type: "header", parameters: [{ type: shape.header, [shape.header]: file }] });
-  } else if (shape?.header === "text_var") {
-    components.push({ type: "header", parameters: [{ type: "text", text: (r.headerParam?.trim() || send?.headerText?.trim()) ?? "" }] });
-  }
-  if (r.params.length) components.push({ type: "body", parameters: r.params.map((text) => ({ type: "text", text })) });
-  for (const index of shape?.urlVars ?? []) {
-    components.push({ type: "button", sub_type: "url", index: String(index), parameters: [{ type: "text", text: (r.buttonParam?.trim() || send?.buttonParam?.trim()) ?? "" }] });
-  }
+function templateMessage(t: Campaign["template"], params: string[]) {
   return {
     type: "template",
     template: {
       name: t.name,
       language: { code: t.language },
-      ...(components.length ? { components } : {}),
+      ...(params.length ? { components: [{ type: "body", parameters: params.map((text) => ({ type: "text", text })) }] } : {}),
     },
   };
 }
 
 // -- screening ---------------------------------------------------------------
 
-export type DryRunRow = RecipientRow & { sourceRow?: number; headerParam?: string; buttonParam?: string };
-
-/** Trims the options and drops empty ones, so a blank form field means "not given". */
-function cleanSend(send?: SendOptions): SendOptions | undefined {
-  if (!send) return undefined;
-  const out: SendOptions = {};
-  const m = send.media;
-  if (m && (m.link?.trim() || m.id?.trim())) {
-    out.media = { kind: m.kind, ...(m.id?.trim() ? { id: m.id.trim() } : { link: m.link!.trim() }), ...(m.filename?.trim() ? { filename: m.filename.trim() } : {}) };
-  }
-  if (send.headerText?.trim()) out.headerText = send.headerText.trim();
-  if (send.buttonParam?.trim()) out.buttonParam = send.buttonParam.trim();
-  return Object.keys(out).length ? out : undefined;
-}
+export type DryRunRow = RecipientRow & { sourceRow?: number };
 
 type Screen = {
   report: PreflightReport<DryRunRow>;
@@ -309,11 +206,10 @@ type Screen = {
   ok: boolean;
   blocked: (BlockedRow & { sourceRow?: number })[];
   template: Campaign["template"] | null;
-  shape: TemplateShape | null;
 };
 
 /** The full pre-send check against live data: Meta's view of the number and template, opt-outs, cooldown, capacity. */
-async function screen(deps: CampaignDeps, tpl: { name: string; language: string }, rows: readonly DryRunRow[], now: number, send?: SendOptions): Promise<Screen> {
+async function screen(deps: CampaignDeps, tpl: { name: string; language: string }, rows: readonly DryRunRow[], now: number): Promise<Screen> {
   const { graph, store } = deps;
   const phones = [...new Set(rows.map((r) => normalizeSaudiMobile(r.phone)).filter((p): p is string => !!p))];
   const [phone, info, raw, optedOut, lastMarketingAt, recent24h, active] = await Promise.all([
@@ -329,10 +225,8 @@ async function screen(deps: CampaignDeps, tpl: { name: string; language: string 
   const report = preflight({ phone, template: info, language: tpl.language, rows, now, optedOut, lastMarketingAt, recent24h });
 
   const extra: PreflightCheck[] = [];
-  const parsed = raw ? templateShape((raw as any).components ?? []) : null;
-  const shape = parsed && !("error" in parsed) ? parsed : null;
-  if (parsed && "error" in parsed) extra.push({ id: "template.components", ok: false, message: parsed.error });
-  if (shape) extra.push(...sendInputChecks(shape, send, report.accepted as DryRunRow[]));
+  const why = raw ? unsupportedReason((raw as any).components ?? []) : null;
+  if (why) extra.push({ id: "template.components", ok: false, message: why });
   if (active) extra.push({ id: "campaign.active", ok: false, message: `Campaign ${active.id} is ${active.status}; finish, cancel or resume it first.` });
 
   const checks = [...report.checks, ...extra];
@@ -342,7 +236,6 @@ async function screen(deps: CampaignDeps, tpl: { name: string; language: string 
     ok: report.ok && extra.length === 0,
     blocked: report.blocked.map((b) => ({ ...b, sourceRow: rows[b.row - 1]?.sourceRow })),
     template: info ? { name: info.name, language: info.language, paramCount: info.paramCount } : null,
-    shape,
   };
 }
 
@@ -359,10 +252,9 @@ export type DryRunResult = {
 };
 
 /** Screens the list and, when it passes, saves the campaign (not started) and returns its confirmation token. Sends nothing. */
-export async function createDryRun(deps: CampaignDeps, input: { template: { name: string; language: string }; rows: readonly DryRunRow[]; send?: SendOptions }): Promise<DryRunResult> {
+export async function createDryRun(deps: CampaignDeps, input: { template: { name: string; language: string }; rows: readonly DryRunRow[] }): Promise<DryRunResult> {
   const now = (deps.now ?? Date.now)();
-  const send = cleanSend(input.send);
-  const s = await screen(deps, input.template, input.rows, now, send);
+  const s = await screen(deps, input.template, input.rows, now);
   const result: DryRunResult = {
     ok: s.ok,
     checks: s.checks,
@@ -376,8 +268,6 @@ export async function createDryRun(deps: CampaignDeps, input: { template: { name
   const recipients: CampaignRecipient[] = s.report.accepted.map((a) => ({
     phone: a.phone,
     params: a.params ?? [],
-    ...(a.headerParam?.trim() ? { headerParam: a.headerParam.trim() } : {}),
-    ...(a.buttonParam?.trim() ? { buttonParam: a.buttonParam.trim() } : {}),
     sourceRow: a.sourceRow,
     consentSource: a.consentSource!,
     consentAt: iso(a.consentAt!),
@@ -388,8 +278,6 @@ export async function createDryRun(deps: CampaignDeps, input: { template: { name
     createdAt: now,
     status: "dry_run",
     template: s.template,
-    ...(s.shape ? { shape: s.shape } : {}),
-    ...(send ? { send } : {}),
     confirmToken: randomUUID(),
     total,
     cursor: 0,
@@ -419,7 +307,7 @@ export async function startCampaign(deps: CampaignDeps, id: string, token: strin
   if (now - c.createdAt > TOKEN_TTL_MS) return { ok: false, error: "The dry run is older than 24 hours; run it again so the checks use current data." };
 
   const stored = (await store.mkGet<CampaignRecipient[]>(key(id, ":r"))) ?? [];
-  const s = await screen(deps, c.template, stored, now, c.send);
+  const s = await screen(deps, c.template, stored, now);
   if (!s.ok) return { ok: false, error: "The checks no longer pass; nothing was started.", checks: s.checks.filter((x) => !x.ok) };
 
   if (!(await store.mkLock("active", 14 * 24 * 60 * 60))) return { ok: false, error: "Another campaign holds the account." };
@@ -513,7 +401,7 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
         const at = now();
         let outcome: Outcome;
         try {
-          const res = await graph.sendMessage(r.phone, templateMessage(c.template, r, c.shape, c.send));
+          const res = await graph.sendMessage(r.phone, templateMessage(c.template, r.params));
           outcome = { phone: r.phone, at, ok: true, messageId: res.messageId };
           try {
             await store.recordMarketingSend(r.phone, at);

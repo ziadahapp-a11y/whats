@@ -16,16 +16,7 @@ type DryRun = {
   summary: { total: number; accepted: number; blocked: number; byReason: Record<string, number>; newUnique: number; remainingCapacity: number };
   blocked: Blocked[];
   blockedTruncated: boolean;
-  /** Meta's id for a header file uploaded with this dry run, reused by the next one. */
-  mediaId?: string;
 };
-
-const MEDIA: Record<MediaKind, { label: string; accept: string; hint: string }> = {
-  image: { label: "الصورة", accept: "image/jpeg,image/png", hint: "JPG أو PNG، أقل من 5 ميقا." },
-  video: { label: "الفيديو", accept: "video/mp4,video/3gpp", hint: "MP4، أقل من 16 ميقا." },
-  document: { label: "ملف PDF", accept: "application/pdf", hint: "PDF، أقل من 100 ميقا." },
-};
-const isMedia = (h: Shape["header"] | undefined): h is MediaKind => h === "image" || h === "video" || h === "document";
 type View = {
   id: string;
   status: string;
@@ -45,15 +36,13 @@ type View = {
   busy?: boolean;
 };
 type Report = View & { delivered: number; read: number; pending: number; failureRate: number; errors: { code: number | null; count: number; meaning?: string }[] };
-type MediaKind = "image" | "video" | "document";
-type Shape = { header: "none" | "text" | "text_var" | MediaKind; urlVars: number[] };
-type Tpl = { name: string; language: string; status: string; category: string; shape?: Shape; unsupported?: string };
+type Tpl = { name: string; language: string; status: string; category: string };
 type Overview = {
   number: { ok: boolean; error?: string; quality_rating?: string; messaging_limit_tier?: string; status?: string; name_status?: string; verified_name?: string; display_phone_number?: string };
   templates: { ok: boolean; error?: string; data?: Tpl[] };
   campaigns: View[];
 };
-type Upload = { uploadId: string; filename: string; rows: number; paramCount: number; hasHeaderVar?: boolean; hasButtonVar?: boolean; warnings: string[]; sample: { sourceRow: number; phone: string; consentAt: string; params: string[] }[] };
+type Upload = { uploadId: string; filename: string; rows: number; paramCount: number; warnings: string[]; sample: { sourceRow: number; phone: string; consentAt: string; params: string[] }[] };
 type Issue = { level: "error" | "warning"; field: string; message: string };
 type TplResult = { ok: false; issues: Issue[] } | { ok: true; submitted: boolean; warnings: Issue[]; meta?: { status: string }; paramCount: number };
 
@@ -104,12 +93,6 @@ function App({ secret }: { secret: string }) {
   const [draft, setDraft] = useState(emptyDraft);
   const [tplResult, setTplResult] = useState<TplResult | null>(null);
   const [headerImg, setHeaderImg] = useState<File | null>(null);
-  // the campaign's header file and variable values
-  const [mediaLink, setMediaLink] = useState("");
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [mediaId, setMediaId] = useState<{ file: File; id: string } | null>(null);
-  const [headerText, setHeaderText] = useState("");
-  const [buttonParam, setButtonParam] = useState("");
 
   // Fills the form from a ready-made template; its sample header image comes from /public.
   async function fillSuggested(t: SuggestedTemplate) {
@@ -198,30 +181,6 @@ function App({ secret }: { secret: string }) {
   }
 
   const [tplName, tplLang] = tplKey.split("|");
-  const picked = usable.find((t) => `${t.name}|${t.language}` === tplKey);
-  const shape = picked?.shape;
-  const mediaKind = isMedia(shape?.header) ? shape.header : null;
-
-  async function dryRun() {
-    if (!upload) return;
-    let media: Record<string, string> | undefined;
-    if (mediaKind) {
-      if (mediaFile && mediaId?.file === mediaFile) media = { kind: mediaKind, id: mediaId.id, filename: mediaFile.name };
-      else if (mediaFile) media = { kind: mediaKind, upload: await uploadPieces(secret, mediaFile, mediaFile.name), filename: mediaFile.name };
-      else if (mediaLink.trim()) media = { kind: mediaKind, link: mediaLink.trim() };
-    }
-    const r = await post<DryRun>({
-      op: "dry_run",
-      uploadId: upload.uploadId,
-      template: tplName,
-      language: tplLang,
-      ...(media ? { media } : {}),
-      ...(shape?.header === "text_var" && headerText.trim() ? { headerText } : {}),
-      ...(shape?.urlVars.length && buttonParam.trim() ? { buttonParam } : {}),
-    });
-    if (r.mediaId && mediaFile) setMediaId({ file: mediaFile, id: r.mediaId });
-    setDry(r);
-  }
 
   async function loadReport(id: string) {
     await run("report", async () => setReport(await call<Report>(secret, `/api/personal/campaigns?id=${id}`)));
@@ -341,14 +300,12 @@ function App({ secret }: { secret: string }) {
               <>
                 <label htmlFor="list">1. ملف العملاء (xlsx أو csv، حتى 2,000 صف)</label>
                 <input id="list" type="file" accept=".xlsx,.csv" disabled={!!busy} onChange={(e) => { void sendFile(e.target.files); e.target.value = ""; }} />
-                <p className="hint">الأعمدة: <code>phone</code> و <code>consent_date</code> (تاريخ التسجيل) ثم <code>var1</code> و <code>var2</code>… لمتغيرات القالب. اختياري: <code>header_var</code> لمتغير العنوان و <code>button_var</code> لآخر رابط الزر، لو تبيها تختلف من عميل لعميل. كل رقم لازم يكون وافق على استقبال رسائلك.</p>
+                <p className="hint">الأعمدة: <code>phone</code> و <code>consent_date</code> (تاريخ التسجيل) ثم <code>var1</code> و <code>var2</code>… لمتغيرات القالب. كل رقم لازم يكون وافق على استقبال رسائلك.</p>
                 {busy === "upload" && <div className="skel" style={{ height: 40 }} />}
                 {upload && (
                   <div className="note" style={{ margin: "10px 0" }}>
                     <p>
                       <strong>{upload.filename}</strong>: {upload.rows} صف، {upload.paramCount} متغير.
-                      {upload.hasHeaderVar && " فيه عمود header_var."}
-                      {upload.hasButtonVar && " فيه عمود button_var."}
                       {upload.warnings.map((w) => <span key={w} className="hint"> {w}</span>)}
                     </p>
                     <p className="hint" dir="ltr">{upload.sample.map((s) => `#${s.sourceRow} ${s.phone} ${s.consentAt.slice(0, 10)}`).join("  |  ")}</p>
@@ -363,39 +320,7 @@ function App({ secret }: { secret: string }) {
                       {usable.map((t) => <option key={`${t.name}|${t.language}`} value={`${t.name}|${t.language}`}>{t.name} ({t.language})</option>)}
                     </select>
                     {usable.length === 0 && <p className="hint">ما عندك قالب تسويقي معتمد بعد. أنشئ واحداً من اليمين وانتظر اعتماد Meta.</p>}
-                    {picked?.unsupported && <p className="err" dir="ltr">{picked.unsupported}</p>}
-
-                    {mediaKind && (
-                      <>
-                        <label htmlFor="media-link">{MEDIA[mediaKind].label} أعلى الرسالة</label>
-                        <input id="media-link" type="url" dir="ltr" placeholder="https://…" value={mediaLink} disabled={!!mediaFile} onChange={(e) => { setMediaLink(e.target.value); setDry(null); }} />
-                        <p className="hint">رابط عام يبدأ بـ https، أو ارفع الملف من جهازك ({MEDIA[mediaKind].hint})</p>
-                        <input type="file" accept={MEDIA[mediaKind].accept} disabled={!!busy} onChange={(e) => { setMediaFile(e.target.files?.[0] ?? null); setDry(null); }} />
-                        {mediaFile && (
-                          <p className="hint">
-                            {mediaFile.name} <button className="btn" onClick={() => { setMediaFile(null); setDry(null); }}>شيله</button>
-                          </p>
-                        )}
-                      </>
-                    )}
-
-                    {shape?.header === "text_var" && (
-                      <>
-                        <label htmlFor="header-text">قيمة المتغير في العنوان</label>
-                        <input id="header-text" maxLength={60} value={headerText} onChange={(e) => { setHeaderText(e.target.value); setDry(null); }} />
-                        <p className="hint">{upload.hasHeaderVar ? "عمود header_var في الملف يغلب هذي القيمة للصفوف اللي فيها قيمة." : "نفس القيمة لكل العملاء. لو تبيها تختلف، أضف عمود header_var في الملف."}</p>
-                      </>
-                    )}
-
-                    {!!shape?.urlVars.length && (
-                      <>
-                        <label htmlFor="button-param">آخر رابط الزر</label>
-                        <input id="button-param" dir="ltr" value={buttonParam} onChange={(e) => { setButtonParam(e.target.value); setDry(null); }} />
-                        <p className="hint">ينضاف لآخر رابط الزر كما هو، بدون مسافات. {upload.hasButtonVar ? "عمود button_var في الملف يغلب هذي القيمة للصفوف اللي فيها قيمة." : "لو تبيه يختلف من عميل لعميل، أضف عمود button_var في الملف."}</p>
-                      </>
-                    )}
-
-                    <button className="btn solid" style={{ marginTop: 12 }} disabled={!!busy || !tplKey || !!picked?.unsupported} onClick={() => run("dry", dryRun)}>
+                    <button className="btn solid" style={{ marginTop: 12 }} disabled={!!busy || !tplKey} onClick={() => run("dry", async () => setDry(await post<DryRun>({ op: "dry_run", uploadId: upload.uploadId, template: tplName, language: tplLang })))}>
                       {busy === "dry" ? "نفحص…" : "3. افحص بدون إرسال"}
                     </button>
                   </>
@@ -408,8 +333,8 @@ function App({ secret }: { secret: string }) {
             <section className="card">
               <h3>نتيجة الفحص <span className={`status ${dry.ok ? "ok" : "error"}`}>{dry.ok ? "جاهزة" : "ما تنفع"}</span></h3>
               <ul className="list">
-                {dry.checks.map((c, i) => (
-                  <li key={`${c.id}-${i}`}>
+                {dry.checks.map((c) => (
+                  <li key={c.id}>
                     <span className={`status ${c.ok ? "ok" : "error"}`}>{c.ok ? "✓" : "✕"}</span>
                     <div className="grow" dir="ltr" style={{ textAlign: "start" }}>{c.message}</div>
                   </li>
@@ -442,10 +367,6 @@ function App({ secret }: { secret: string }) {
                         setActive(v);
                         setDry(null);
                         setUpload(null);
-                        setMediaLink("");
-                        setMediaFile(null);
-                        setHeaderText("");
-                        setButtonParam("");
                         await refresh();
                         setDriving(true);
                       })

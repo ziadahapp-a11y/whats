@@ -27,9 +27,6 @@ export type UploadSummary = {
   filename: string;
   rows: number;
   paramCount: number;
-  /** Whether the file carries per-row header / link-button values. */
-  hasHeaderVar: boolean;
-  hasButtonVar: boolean;
   warnings: string[];
   /** First rows with the phone masked, so the file can be recognised without exposing every number. */
   sample: { sourceRow: number; phone: string; consentAt: string; params: string[] }[];
@@ -52,8 +49,6 @@ export async function saveUpload(store: Store, data: Uint8Array, filename: strin
     filename,
     rows: rows.length,
     paramCount: parsed.paramCount,
-    hasHeaderVar: parsed.hasHeaderVar,
-    hasButtonVar: parsed.hasButtonVar,
     warnings: parsed.warnings,
     sample: rows.slice(0, 3).map((r) => ({ sourceRow: r.sourceRow, phone: maskPhone(r.phone), consentAt: isoOf(r.consentAt), params: r.params ?? [] })),
   };
