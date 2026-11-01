@@ -923,7 +923,7 @@ test("meeting reminder goes once, 45 minutes before, only inside the 24h window"
   assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 4, 0), cal), []); // 07:00 Riyadh
   assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 10, 0), cal), []); // 60 min before
   assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 10, 20), cal), ["966500000001"]); // 40 min before
-  assert.match(sent[0], /^966500000001\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 م\n\[دخول الاجتماع\]\(https:\/\/meet\.google\.com\/x\)$/);
+  assert.match(sent[0], /^966500000001\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 مساءً\n\[دخول الاجتماع\]\(https:\/\/meet\.google\.com\/x\)$/);
   assert.deepEqual(await sendMeetingReminders(d, Date.UTC(2026, 9, 29, 10, 35), cal), []);
 });
 
@@ -957,7 +957,7 @@ test("meetings booked outside Zaid are matched to their chat by phone or email a
   assert.deepEqual(await sendMeetingReminders(d, now + 900000, cal), []);
   // 40 minutes before today's meetings: the reminder for the email-matched chat
   assert.deepEqual(await sendMeetingReminders(d, today - 40 * 60000, cal), ["966500000002", "966500000002"]);
-  assert.match(sent[2], /^966500000002\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 م$/);
+  assert.match(sent[2], /^966500000002\|حياك الله للتذكير\nموعدنا اليوم بإذن الله الساعة 2:00 مساءً$/);
 });
 
 test("an unanswered last message gets one more AI pass inside the window, after a short wait", async () => {

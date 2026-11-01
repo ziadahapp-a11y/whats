@@ -56,7 +56,7 @@ export function meetings(base: RawKV, store?: Store, now: () => number = Date.no
       }
       const list = offer.length ? offer.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n") : "(no free times right now)";
       return `Meetings: you can book a ${s.minutes}-minute online meeting (Google Meet) yourself. This replaces handing meeting requests to the team.
-- Offer the merchant two or three of the free times below, using the Arabic label only. Never offer or accept any other time.
+- Offer the merchant two or three of the free times below, copying each Arabic label exactly, including صباحًا or مساءً; never rewrite a time or call it morning or evening yourself. Never offer or accept any other time. If the merchant asks for a time that is not listed, say that time is not available and offer the listed times closest to it.
 - To send the calendar invite you need the merchant's email, and the team needs their store link; ask for whichever is not in the conversation, both in one message.
 - Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email> <store link>]], for example [[BOOK ${offer[0] ? localIso(offer[0], s.tz) : "2026-11-02T10:30"} name@example.com https://shop.example.com]]. Leave the store link out only if the merchant has none or does not want to share it; never invent one. The system books it and adds the meeting link.
 - If none of the times suits them or no free times are listed, hand over to the team as usual.

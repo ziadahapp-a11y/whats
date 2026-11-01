@@ -78,10 +78,13 @@ export function atLocal(y: number, m: number, d: number, hhmm: string, tz: strin
   return guess - offsetMinutes(guess - offsetMinutes(guess, tz) * 60000, tz) * 60000;
 }
 
-export const slotLabel = (ms: number, tz: string) =>
-  new Intl.DateTimeFormat("ar-SA-u-nu-latn-ca-gregory", { timeZone: tz, weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" }).format(new Date(ms));
+/** "ص"/"م" spelled out, so neither a merchant nor the AI mistakes an afternoon slot for a morning one. */
+const ampm = (t: string) => t.replace(/\s?ص$/, " صباحًا").replace(/\s?م$/, " مساءً");
 
-export const timeLabel = (ms: number, tz: string) => new Intl.DateTimeFormat("ar-SA-u-nu-latn", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(ms));
+export const slotLabel = (ms: number, tz: string) =>
+  ampm(new Intl.DateTimeFormat("ar-SA-u-nu-latn-ca-gregory", { timeZone: tz, weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit" }).format(new Date(ms)));
+
+export const timeLabel = (ms: number, tz: string) => ampm(new Intl.DateTimeFormat("ar-SA-u-nu-latn", { timeZone: tz, hour: "numeric", minute: "2-digit" }).format(new Date(ms)));
 
 /** ISO local time without offset, the form Zaid uses to name a slot: 2026-11-02T10:30 */
 export function localIso(ms: number, tz: string) {
