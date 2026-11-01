@@ -60,10 +60,29 @@ export const ctaPayload = (b: LinkButton) => ({
 
 /** Official number: Zaid never guesses. A reply it is not sure of becomes a short "the team will review it". */
 export const UNSURE_LINE = "حياك الله، بيراجع الفريق طلبك ويرد عليك هنا قريب بإذن الله.";
-export const UNSURE_RULE = `Only answer from <knowledge>, from these instructions, or from what was already said in the conversation. If you are not sure of the answer, do not guess and do not promise anything on the team's behalf (no reports, emails, discounts, dates, groups or features that are not written there): reply with exactly this line and nothing else: ${UNSURE_LINE} If the conversation already has this line or the handover text after the merchant's last question, output [[SKIP]] instead.`;
+export const UNSURE_RULE = `Only answer from <knowledge>, from these instructions, or from what was already said in the conversation. If you are not sure of the answer, do not guess and do not promise anything on the team's behalf (no reports, emails, discounts, dates, groups or features that are not written there): reply with exactly this line and nothing else: ${UNSURE_LINE} If the conversation already has this line, the handover text or the working-hours line (ساعات العمل) after the merchant's last question, output [[SKIP]] instead.`;
 
 /** A team member wrote from the app within this many seconds: Zaid does not answer at all. */
 export const GROUP_RULE = `A private WhatsApp group with our team is optional and the merchant creates it themselves with this number if they want it: we never create it and never add them. Never say the team will create it, add them or arrange it. If they ask how, tell them they can create the group and add this number. If they ask what the group is for, say it is for following the store's performance, getting ready for seasons and offers, Ziadah updates, and support. Do not add other goals.`;
+/** Team hours on the official number: Sunday to Thursday, 9:00 to 17:00 Riyadh time (UTC+3, no DST). */
+export const OFF_HOURS_LINE = "اكتب استفسارك بالتفصيل هنا، وأول ما يبدأ الدوام بيرد عليك الفريق، ومالك إلا اللي يرضيك. ساعات العمل من الأحد إلى الخميس، من 9 صباحًا إلى 5 مساءً.";
+const HANDOVER = "جاري تحويلك للفريق المختص";
+
+export function offHours(ms: number): boolean {
+  const d = new Date(ms + 3 * 3600_000);
+  const day = d.getUTCDay(), h = d.getUTCHours();
+  return day === 5 || day === 6 || h < 9 || h >= 17;
+}
+
+/** Outside team hours a reply that hands the merchant to the team says when the team is back instead. */
+export function withHours(text: string, ms: number): string {
+  if (!offHours(ms)) return text;
+  const i = text.indexOf(HANDOVER);
+  const head = i >= 0 ? text.slice(0, i).replace(/[\s،,]+$/, "") : text.trim() === UNSURE_LINE ? "" : null;
+  if (head === null) return text;
+  return head ? `${/[.!؟?]$/.test(head) ? head : head + "."}\n\n${OFF_HOURS_LINE}` : `حياك الله، ${OFF_HOURS_LINE}`;
+}
+
 export const TEAM_QUIET_SECS = 15 * 60;
 /** ... and within this many, Zaid only closes or skips. */
 export const TEAM_ACTIVE_SECS = 30 * 60;

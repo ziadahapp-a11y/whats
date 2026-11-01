@@ -983,3 +983,21 @@ test("an unanswered last message gets one more AI pass inside the window, after 
   await deps.state.set("flow:seen:f1:u5", "1");
   assert.equal((await catchUpUnanswered(deps, now + 120_000)).length, 0); // already skipped by the live flow
 });
+
+test("handoffs outside team hours give the working hours", async () => {
+  const { withHours, offHours, OFF_HOURS_LINE, UNSURE_LINE } = await import("./flows/links");
+  const at = (iso: string) => Date.parse(iso);
+  // Sunday 10:00 Riyadh is 07:00 UTC
+  assert.equal(offHours(at("2026-11-01T07:00:00Z")), false);
+  assert.equal(offHours(at("2026-11-01T14:00:00Z")), true); // 17:00 Riyadh
+  assert.equal(offHours(at("2026-11-01T05:59:00Z")), true); // 08:59 Riyadh
+  assert.equal(offHours(at("2026-10-30T07:00:00Z")), true); // Friday
+  assert.equal(offHours(at("2026-10-31T07:00:00Z")), true); // Saturday
+  const handoff = "سؤالك عن الفاتورة، جاري تحويلك للفريق المختص\n\nان لم تتلقى رد خلال 24 ساعة، فضلاً عاود الإرسال";
+  const fri = at("2026-10-30T07:00:00Z");
+  assert.equal(withHours(handoff, fri), `سؤالك عن الفاتورة.\n\n${OFF_HOURS_LINE}`);
+  assert.equal(withHours("جاري تحويلك للفريق المختص\n\nان لم", fri), `حياك الله، ${OFF_HOURS_LINE}`);
+  assert.equal(withHours(UNSURE_LINE, fri), `حياك الله، ${OFF_HOURS_LINE}`);
+  assert.equal(withHours("العفو، حاضرين لأي استفسار.", fri), "العفو، حاضرين لأي استفسار.");
+  assert.equal(withHours(handoff, at("2026-11-01T07:00:00Z")), handoff);
+});

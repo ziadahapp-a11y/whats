@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { CLOSING_RULE, GROUP_RULE, LINK_RULE, TEAM_ACTIVE_SECS, TEAM_QUIET_SECS, TEAM_RULE, UNSURE_RULE } from "./links";
+import { CLOSING_RULE, GROUP_RULE, LINK_RULE, TEAM_ACTIVE_SECS, TEAM_QUIET_SECS, TEAM_RULE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -477,6 +477,7 @@ async function runActions(flow: Flow, x: Ctx, d: EngineDeps, mode: Flow["mode"],
           const team = d.channel.kind === "official" ? await teamWroteAt(d, x.chat) : undefined;
           let out = team && x.now / 1000 - team < TEAM_QUIET_SECS ? SKIP : await runAi(a, x, d);
           if (!out.includes(SKIP) && d.meetings && mode === "auto") out = await d.meetings.apply(out, x.chat, x.chatName);
+          if (!out.includes(SKIP) && d.channel.kind === "official") out = withHours(out, x.now);
           x.vars.ai = out === SKIP ? "" : out;
           output = x.vars.ai;
           detail = out.includes(SKIP) ? "Claude chose not to reply" : await deliver(x.chat, out, a.quote ? x.msg?.id : undefined);
