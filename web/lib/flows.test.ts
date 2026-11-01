@@ -826,7 +826,7 @@ test("free slots respect Riyadh working hours, notice, gaps and busy time", asyn
   assert.deepEqual(slots, ["2026-10-29T10:45"]);
   const wide = cleanSettings({ ...s, aheadDays: 4, end: "16:00" });
   const offer = spread(freeSlots(wide, [], now, 60), wide.tz).map((t) => localIso(t, wide.tz));
-  assert.deepEqual(offer, ["2026-10-29T10:45", "2026-10-29T11:30", "2026-11-01T10:00", "2026-11-01T10:45", "2026-11-02T10:00", "2026-11-02T10:45"]);
+  assert.deepEqual(offer, ["2026-10-29T10:45", "2026-10-29T15:15", "2026-11-01T10:00", "2026-11-01T15:15", "2026-11-02T10:00", "2026-11-02T15:15"]);
 });
 
 test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to the team", async () => {
@@ -1010,4 +1010,18 @@ test("Zaid books meetings at least 12 hours ahead by default", async () => {
   const slots = freeSlots(DEFAULT_SETTINGS, [], now);
   assert.ok(slots.length > 0);
   assert.ok(slots.every((t) => t >= now + 12 * 3600_000));
+});
+
+test("the 16:00 slot is offered whenever it is free, and the day ends at 16:30", async () => {
+  const { DEFAULT_SETTINGS, freeSlots, spread, localIso } = await import("./gcal");
+  assert.equal(DEFAULT_SETTINGS.end, "16:30");
+  const now = Date.UTC(2026, 10, 1, 5, 0); // Sunday 08:00 Riyadh, so Monday is 12+ hours away
+  const s = { ...DEFAULT_SETTINGS, aheadDays: 1 };
+  const mon = freeSlots(s, [], now, 60).map((t) => localIso(t, s.tz)).filter((x) => x.startsWith("2026-11-02"));
+  assert.ok(mon.includes("2026-11-02T16:00"));
+  const offer = spread(freeSlots(s, [], now, 60), s.tz).map((t) => localIso(t, s.tz));
+  assert.ok(offer.includes("2026-11-02T16:00"));
+  // a meeting already at 16:00 keeps that slot out
+  const busy = [{ start: Date.UTC(2026, 10, 2, 13, 0), end: Date.UTC(2026, 10, 2, 13, 30) }];
+  assert.ok(!freeSlots(s, busy, now, 60).map((t) => localIso(t, s.tz)).includes("2026-11-02T16:00"));
 });

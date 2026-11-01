@@ -24,7 +24,7 @@ export type Settings = {
   title: string;
 };
 
-export const DEFAULT_SETTINGS: Settings = { days: [0, 1, 2, 3, 4], start: "10:00", end: "16:00", minutes: 30, gap: 15, noticeHours: 12, aheadDays: 7, tz: "Asia/Riyadh", title: "اجتماع زيادة" };
+export const DEFAULT_SETTINGS: Settings = { days: [0, 1, 2, 3, 4], start: "10:00", end: "16:30", minutes: 30, gap: 15, noticeHours: 12, aheadDays: 7, tz: "Asia/Riyadh", title: "اجتماع زيادة" };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -105,24 +105,26 @@ export function freeSlots(s: Settings, busy: Busy[], now: number, max = 8): numb
     if (!s.days.includes(day.weekday)) continue;
     const open = atLocal(day.y, day.m, day.d, s.start, s.tz);
     const close = atLocal(day.y, day.m, day.d, s.end, s.tz);
-    for (let t = open; t + len <= close && out.length < max; t += len + gap) {
-      if (t < earliest) continue;
-      if (busy.some((b) => t < b.end + gap && t + len + gap > b.start)) continue;
-      out.push(t);
-    }
+    const fits = (t: number) => t >= earliest && !busy.some((b) => t < b.end + gap && t + len + gap > b.start);
+    for (let t = open; t + len <= close && out.length < max; t += len + gap) if (fits(t)) out.push(t);
+    // the day's last slot ends exactly at closing time (16:00 to 16:30), offered whenever it is free
+    const last = close - len;
+    if (out.length < max && last >= open && !out.includes(last) && fits(last) && !out.some((t) => t < last + len + gap && t + len + gap > last)) out.push(last);
   }
   return out;
 }
 
-/** Spread the offer over days: at most `perDay` slots from each day. */
+/** Spread the offer over days: each day's earliest free slot and its last one (the 16:00 slot when free), at most `perDay` a day. */
 export function spread(slots: number[], tz: string, perDay = 2, max = 6): number[] {
-  const seen = new Map<string, number>();
-  const out: number[] = [];
-  for (const t of slots) {
+  const days = new Map<string, number[]>();
+  for (const t of [...slots].sort((a, b) => a - b)) {
     const d = localIso(t, tz).slice(0, 10);
-    if ((seen.get(d) ?? 0) >= perDay) continue;
-    seen.set(d, (seen.get(d) ?? 0) + 1);
-    out.push(t);
+    days.set(d, [...(days.get(d) ?? []), t]);
+  }
+  const out: number[] = [];
+  for (const ts of days.values()) {
+    const pick = perDay >= 2 && ts.length > 1 ? [ts[0], ...ts.slice(1, perDay - 1), ts[ts.length - 1]] : ts.slice(0, perDay);
+    for (const t of pick) if (out.length < max) out.push(t);
     if (out.length >= max) break;
   }
   return out;
