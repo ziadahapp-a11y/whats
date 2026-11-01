@@ -24,7 +24,7 @@ export type Settings = {
   title: string;
 };
 
-export const DEFAULT_SETTINGS: Settings = { days: [0, 1, 2, 3, 4], start: "10:00", end: "16:00", minutes: 30, gap: 15, noticeHours: 2, aheadDays: 7, tz: "Asia/Riyadh", title: "اجتماع زيادة" };
+export const DEFAULT_SETTINGS: Settings = { days: [0, 1, 2, 3, 4], start: "10:00", end: "16:00", minutes: 30, gap: 15, noticeHours: 12, aheadDays: 7, tz: "Asia/Riyadh", title: "اجتماع زيادة" };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 

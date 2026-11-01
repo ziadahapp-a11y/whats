@@ -833,6 +833,7 @@ test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to
   const { meetings, HANDOFF } = await import("./flows/meetings");
   const base = new MemoryRawKV();
   await base.set("meta:gcal:token", JSON.stringify({ refresh: "r", email: "team@ziadah.app" }));
+  await base.set("meta:gcal:settings", JSON.stringify({ noticeHours: 2 }));
   const now = Date.UTC(2026, 9, 29, 5, 30);
   const booked: any[] = [];
   const cal: any = { busy: async () => [], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end, meet: "https://meet.google.com/abc-defg-hij" }) };
@@ -862,6 +863,7 @@ test("the merchant's store link goes into the meeting details", async () => {
   assert.equal(siteUrl("لا"), undefined);
   const base = new MemoryRawKV();
   await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
+  await base.set("meta:gcal:settings", JSON.stringify({ noticeHours: 2 }));
   const store = new Store(new MemoryKV());
   const now = Date.UTC(2026, 9, 29, 5, 30);
   const booked: any[] = [];
@@ -1000,4 +1002,12 @@ test("handoffs outside team hours give the working hours", async () => {
   assert.equal(withHours(UNSURE_LINE, fri), `حياك الله، ${OFF_HOURS_LINE}`);
   assert.equal(withHours("العفو، حاضرين لأي استفسار.", fri), "العفو، حاضرين لأي استفسار.");
   assert.equal(withHours(handoff, at("2026-11-01T07:00:00Z")), handoff);
+});
+
+test("Zaid books meetings at least 12 hours ahead by default", async () => {
+  const { DEFAULT_SETTINGS, freeSlots } = await import("./gcal");
+  const now = Date.UTC(2026, 10, 1, 20, 52); // Sunday 23:52 Riyadh
+  const slots = freeSlots(DEFAULT_SETTINGS, [], now);
+  assert.ok(slots.length > 0);
+  assert.ok(slots.every((t) => t >= now + 12 * 3600_000));
 });
