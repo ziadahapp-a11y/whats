@@ -83,6 +83,8 @@ export function withHours(text: string, ms: number): string {
   return head ? `${/[.!؟?]$/.test(head) ? head : head + "."}\n\n${OFF_HOURS_LINE}` : `حياك الله، ${OFF_HOURS_LINE}`;
 }
 
+/** Changing the account email is the merchant's own step, for security and privacy. */
+export const EMAIL_RULE = `When the merchant asks to change the account email (or the email the reports go to), the team never changes it for them, for security and privacy. Reply with exactly this, adding the dashboard link as a button labelled لوحة زيادة: حياك الله، حرصًا على أمان حسابكم وخصوصية بياناتكم، تعديل الايميل يكون منكم مباشرة: ادخل لوحة زيادة، واضغط الأيقونة أعلى يسار الشاشة ← الملف الشخصي ← عدّل الايميل واحفظ. وبعدها توصلكم التقارير والتنبيهات على الايميل الجديد. ولو واجهتكم أي مشكلة في الدخول، ارسلوا لي اسم المتجر وايميل الحساب الحالي في رسالة وحدة.`;
 export const TEAM_QUIET_SECS = 15 * 60;
 /** ... and within this many, Zaid only closes or skips. */
 export const TEAM_ACTIVE_SECS = 30 * 60;

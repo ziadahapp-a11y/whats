@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { CLOSING_RULE, GROUP_RULE, LINK_RULE, TEAM_ACTIVE_SECS, TEAM_QUIET_SECS, TEAM_RULE, UNSURE_RULE, withHours } from "./links";
+import { CLOSING_RULE, EMAIL_RULE, GROUP_RULE, LINK_RULE, TEAM_ACTIVE_SECS, TEAM_QUIET_SECS, TEAM_RULE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -280,7 +280,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
-    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}`;
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}`;
     const team = await teamWroteAt(d, x.chat);
     if (team && x.now / 1000 - team < TEAM_ACTIVE_SECS) system += `\n\n${TEAM_RULE}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
