@@ -62,7 +62,6 @@ export const ctaPayload = (b: LinkButton) => ({
 export const UNSURE_LINE = "حياك الله، بيراجع الفريق طلبك ويرد عليك هنا قريب بإذن الله.";
 export const UNSURE_RULE = `Only answer from <knowledge>, from these instructions, or from what was already said in the conversation. If you are not sure of the answer, do not guess and do not promise anything on the team's behalf (no reports, emails, discounts, dates, groups or features that are not written there): reply with exactly this line and nothing else: ${UNSURE_LINE} If the conversation already has this line, the handover text or the working-hours line (ساعات العمل) after the merchant's last question, output [[SKIP]] instead.`;
 
-/** A team member wrote from the app within this many seconds: Zaid does not answer at all. */
 export const GROUP_RULE = `A private WhatsApp group with our team is optional and the merchant creates it themselves with this number if they want it: we never create it and never add them. Never say the team will create it, add them or arrange it. If they ask how, tell them they can create the group and add this number. If they ask what the group is for, say it is for following the store's performance, getting ready for seasons and offers, Ziadah updates, and support. Do not add other goals.`;
 /** Team hours on the official number: Sunday to Thursday, 9:00 to 17:00 Riyadh time (UTC+3, no DST). */
 export const OFF_HOURS_LINE = "اكتب استفسارك بالتفصيل هنا، وأول ما يبدأ الدوام بيرد عليك الفريق، ومالك إلا اللي يرضيك. ساعات العمل من الأحد إلى الخميس، من 9 صباحًا إلى 5 مساءً.";
@@ -85,7 +84,46 @@ export function withHours(text: string, ms: number): string {
 
 /** Changing the account email is the merchant's own step, for security and privacy. */
 export const EMAIL_RULE = `When the merchant asks to change the account email (or the email the reports go to), the team never changes it for them, for security and privacy. Reply with exactly this, adding the dashboard link as a button labelled لوحة زيادة: حياك الله، حرصًا على أمان حسابكم وخصوصية بياناتكم، تعديل الايميل يكون منكم مباشرة: ادخل لوحة زيادة، واضغط الأيقونة أعلى يسار الشاشة ← الملف الشخصي ← عدّل الايميل واحفظ. وبعدها توصلكم التقارير والتنبيهات على الايميل الجديد. ولو واجهتكم أي مشكلة في الدخول، ارسلوا لي اسم المتجر وايميل الحساب الحالي في رسالة وحدة. If the merchant then says they do not have access to the current email, reply with exactly this and do not hand over to the team: حياك الله، لدواعي الأمان والخصوصية ما نقدر نغيّر الايميل من طرفنا. يلزم عضو فريقكم اللي فعّل التطبيق يدخل لوحة زيادة بالايميل الحالي ويغيّره للايميل المطلوب من الملف الشخصي. Only if the merchant then says the team member who activated the app is no longer with the store or cannot log in, the team steps in: ask in one line for the store name and the new email, and once both are in the conversation, hand over to the team with the usual handover text.`;
+/** A team member wrote from the app within this many seconds: Zaid does not answer at all. */
 export const TEAM_QUIET_SECS = 15 * 60;
 /** ... and within this many, Zaid only closes or skips. */
 export const TEAM_ACTIVE_SECS = 30 * 60;
 export const TEAM_RULE = `Lines marked "Team" were typed by a team member in the WhatsApp Business app, and that person is handling this conversation now. Output exactly [[SKIP]], unless the merchant's latest message only closes the conversation (thanks, ok, a sticker), in which case send the one short closing line.`;
+
+/** Once a team member has answered the merchant from the app, the chat is theirs for this long: Zaid sends nothing. */
+export const TEAM_OWNS_SECS = 24 * 3600;
+/** The WhatsApp Business app's own away/greeting message, which is not a team member answering. */
+const APP_AUTO = /ان لم تتلقى رد خلال 24 ساعة|كيف اساعدك اليوم/;
+
+type Msg = { id: string; direction: "in" | "out"; type: string; text?: string; caption?: string; timestamp: number; source?: string };
+
+/**
+ * When a team member last answered the merchant from the app (unix seconds): a Business-app message
+ * sent within a day after a merchant message. A broadcast that opens a chat, and the app's away message, do not count.
+ */
+export function teamRepliedAt(msgs: readonly Msg[]): number | undefined {
+  let lastIn: number | undefined, at: number | undefined;
+  for (const m of msgs) {
+    if (m.type === "reaction") continue;
+    if (m.direction === "in") lastIn = m.timestamp;
+    else if (m.source === "business_app" && lastIn !== undefined && m.timestamp - lastIn < TEAM_OWNS_SECS && !APP_AUTO.test(m.text ?? m.caption ?? "")) at = m.timestamp;
+  }
+  return at;
+}
+
+/** The merchant sent another message after this one: only the newest of a burst gets a reply. */
+export function newerInbound(msgs: readonly Msg[], id: string | undefined): boolean {
+  const i = id ? msgs.findIndex((m) => m.id === id) : -1;
+  return i >= 0 && msgs.slice(i + 1).some((m) => m.direction === "in" && m.type !== "reaction");
+}
+
+/** Letters from scripts Zaid never writes (Korean, Chinese, Japanese, Cyrillic, Hebrew, Hindi, Thai): a broken model output. */
+export const FOREIGN_SCRIPT = /[Ѐ-ӿ֐-׿ऀ-ॿ฀-๿ᄀ-ᇿ぀-ヿ㐀-鿿가-힯]/;
+
+/** Sensitive requests go to the team with no explanation, argument or offer from Zaid. */
+export const STRICT_RULE = `Strict rules for every reply:
+- When the merchant asks to cancel or unsubscribe, asks for a refund, complains about a charge, the app or the team, says something is wrong with their data, or is upset: do not explain, argue, justify or blame anyone (not Zid, not the merchant, not the team). Never say it is not our side, never say the team already explained it, never state a cancellation or refund policy, and never apologize for a mistake nobody confirmed. Reply with exactly this and nothing else: حياك الله، وصلنا طلبك، جاري تحويلك للفريق المختص
+- When the merchant only asks whether numbers we sent them are real or accurate, reply with exactly this and nothing else: حياك الله، الأرقام كلها من حساب متجرك في زيادة، وتقدر تتأكد منها بنفسك بالدخول بحسابك في [لوحة زيادة](https://dashboard.ziadah.app/login) If they still doubt the numbers after that, use the handover line above.
+- Never offer anything the merchant did not ask for: no review, meeting, call, explanation or "تحب أوضح لك" question at the end of a reply.
+- One reply answers everything the merchant wrote since our last message. Keep it to two short sentences unless a step-by-step answer was asked for.
+- Write only Arabic, or English when the merchant writes English. Never use letters from any other language.`;

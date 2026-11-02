@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { CLOSING_RULE, EMAIL_RULE, GROUP_RULE, LINK_RULE, TEAM_ACTIVE_SECS, TEAM_QUIET_SECS, TEAM_RULE, UNSURE_RULE, withHours } from "./links";
+import { CLOSING_RULE, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, LINK_RULE, newerInbound, STRICT_RULE, TEAM_ACTIVE_SECS, TEAM_OWNS_SECS, TEAM_QUIET_SECS, TEAM_RULE, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -280,7 +280,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
-    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}`;
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}`;
     const team = await teamWroteAt(d, x.chat);
     if (team && x.now / 1000 - team < TEAM_ACTIVE_SECS) system += `\n\n${TEAM_RULE}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
@@ -474,8 +474,21 @@ async function runActions(flow: Flow, x: Ctx, d: EngineDeps, mode: Flow["mode"],
         case "ai_reply": {
           needChat(a.type);
           // a team member typing in the app right now owns the chat: Zaid stays out
-          const team = d.channel.kind === "official" ? await teamWroteAt(d, x.chat) : undefined;
-          let out = team && x.now / 1000 - team < TEAM_QUIET_SECS ? SKIP : await runAi(a, x, d);
+          const official = d.channel.kind === "official";
+          const team = official ? await teamWroteAt(d, x.chat) : undefined;
+          // ... and so does a chat a team member answered within the last day, and a message the merchant already followed with another
+          const stayOut = async () => {
+            if (!official) return false;
+            const recent = await d.store.messages(x.chat, 40);
+            const owned = teamRepliedAt(recent);
+            return (!!owned && x.now / 1000 - owned < TEAM_OWNS_SECS) || newerInbound(recent, x.msg?.id);
+          };
+          let out = (team && x.now / 1000 - team < TEAM_QUIET_SECS) || (await stayOut()) ? SKIP : await runAi(a, x, d);
+          // a broken model output (letters from another language) is asked again once, then handed to the team
+          if (official && FOREIGN_SCRIPT.test(out)) out = await runAi(a, x, d);
+          if (official && FOREIGN_SCRIPT.test(out)) out = UNSURE_LINE;
+          // the merchant may have written again, or the team answered, while the model was thinking
+          if (!out.includes(SKIP) && (await stayOut())) out = SKIP;
           if (!out.includes(SKIP) && d.meetings && mode === "auto") out = await d.meetings.apply(out, x.chat, x.chatName);
           if (!out.includes(SKIP) && d.channel.kind === "official") out = withHours(out, x.now);
           x.vars.ai = out === SKIP ? "" : out;

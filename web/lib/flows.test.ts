@@ -1025,3 +1025,63 @@ test("the 16:00 slot is offered whenever it is free, and the day ends at 16:30",
   const busy = [{ start: Date.UTC(2026, 10, 2, 13, 0), end: Date.UTC(2026, 10, 2, 13, 30) }];
   assert.ok(!freeSlots(s, busy, now, 60).map((t) => localIso(t, s.tz)).includes("2026-11-02T16:00"));
 });
+
+test("team ownership: a team answer holds the chat for a day; broadcasts and the app's away message do not", async () => {
+  const { teamRepliedAt, newerInbound } = await import("./flows/links");
+  const m = (id: string, direction: "in" | "out", timestamp: number, text = "x", source?: "business_app" | "api") => ({ id, direction, type: "text", text, timestamp, source });
+  assert.equal(teamRepliedAt([m("b", "out", 100, "اشتراكك ينتهي", "business_app"), m("q", "in", 200)]), undefined);
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("t", "out", 160, "الالغاء من زد", "business_app")]), 160);
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("a", "out", 120, "حياك الله، كيف اساعدك اليوم؟", "business_app")]), undefined);
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("z", "out", 110, "رد زيد", "api")]), undefined);
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("b", "out", 100 + 2 * 86400, "حملة", "business_app")]), undefined);
+  const burst = [m("a", "in", 100), m("b", "in", 100), m("z", "out", 101, "رد", "api")];
+  assert.equal(newerInbound(burst, "a"), true);
+  assert.equal(newerInbound(burst, "b"), false);
+  assert.equal(newerInbound(burst, "missing"), false);
+});
+
+test("official Zaid: one reply per burst, silent in a chat the team answered, and never sends foreign letters", async () => {
+  const { UNSURE_LINE, STRICT_RULE } = await import("./flows/links");
+  const official = (reply: string[]) => {
+    const systems: string[] = [];
+    const ai: AiClient = async (r) => (systems.push(r.system), reply.shift() ?? "تمام");
+    const s = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSecs: 0 } as never)], { ai });
+    s.deps.channel = { ...s.deps.channel, kind: "official" };
+    return { ...s, systems };
+  };
+  const t = Math.floor(NOW / 1000);
+
+  // two messages in the same second: only the newer one is answered
+  {
+    const { deps, store, sent, systems } = official(["الرد"]);
+    const a = msg({ id: "a1", text: "بالتدقيق", timestamp: t - 30 }), b = msg({ id: "b1", text: "ممكن الأرقام", timestamp: t - 30 });
+    await store.saveMessage(a);
+    await store.saveMessage(b);
+    await runFlows(deps, [a, b], NOW);
+    assert.equal(sent.length, 1);
+    assert.equal(systems.length, 1);
+    assert.ok(systems[0].includes(STRICT_RULE));
+  }
+  // the team answered 31 minutes ago: Zaid stays out and the model is not called
+  {
+    const { deps, store, sent, systems } = official(["رد"]);
+    await store.saveMessage(msg({ id: "q0", timestamp: t - 40 * 60 }));
+    await store.saveMessage({ id: "t0", waId: CHAT, direction: "out", type: "text", text: "الالغاء من زد", timestamp: t - 31 * 60, source: "business_app" });
+    const m = msg({ id: "q1", timestamp: t - 30 });
+    await store.saveMessage(m);
+    await runFlows(deps, [m], NOW);
+    assert.equal(sent.length, 0);
+    assert.equal(systems.length, 0);
+  }
+  // Korean letters in the output: asked again once, then handed to the team
+  {
+    const { deps, store, sent, systems } = official(["وضح لكم 경로 الإلغاء", "다시 경로"]);
+    const m = msg({ id: "k1", timestamp: t - 30 });
+    await store.saveMessage(m);
+    await runFlows(deps, [m], NOW);
+    assert.equal(systems.length, 2);
+    assert.equal(sent.length, 1);
+    assert.ok(sent[0].text.includes("الفريق") && !/[가-힯]/.test(sent[0].text));
+    assert.ok(sent[0].text === UNSURE_LINE || sent[0].text.includes("ساعات العمل"));
+  }
+});
