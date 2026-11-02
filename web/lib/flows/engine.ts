@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { CLOSING_RULE, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, LINK_RULE, newerInbound, STRICT_RULE, TEAM_ACTIVE_SECS, TEAM_OWNS_SECS, TEAM_QUIET_SECS, TEAM_RULE, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, CLOSING_RULE, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, newerInbound, STRICT_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -262,10 +262,20 @@ async function transcriptFor(x: Ctx, d: EngineDeps, a: { context: number; scope:
   return msgs.map((m) => line(m, x.chatName)).join("\n").slice(-6000);
 }
 
-/** when a team member last wrote in this chat from the WhatsApp Business app (unix seconds) */
-async function teamWroteAt(d: EngineDeps, chat: string): Promise<number | undefined> {
-  const m = (await d.store.messages(chat, 20)).filter((m) => m.direction === "out" && m.source === "business_app").pop();
-  return m?.timestamp;
+/**
+ * Official number: whether Zaid answers this message now. "skip" when the merchant wrote again after it
+ * or someone already answered it; "wait" while the team is handling the chat and the message is not yet
+ * TEAM_WAIT_SECS old (the catch-up answers it later if nobody did).
+ */
+async function teamHold(d: EngineDeps, x: Ctx): Promise<"answer" | "wait" | "skip"> {
+  const m = x.msg;
+  if (!m) return "answer";
+  const recent = await d.store.messages(x.chat, 40);
+  if (newerInbound(recent, m.id) || answeredAfter(recent, m.id)) return "skip";
+  const nowS = x.now / 1000;
+  if (nowS - m.timestamp >= TEAM_WAIT_SECS) return "answer";
+  const replied = teamRepliedAt(recent), wrote = lastTeamAt(recent);
+  return (replied && nowS - replied < TEAM_OWNS_SECS) || (wrote && nowS - wrote < TEAM_WAIT_SECS) ? "wait" : "answer";
 }
 
 async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d: EngineDeps): Promise<string> {
@@ -281,8 +291,6 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
     system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}`;
-    const team = await teamWroteAt(d, x.chat);
-    if (team && x.now / 1000 - team < TEAM_ACTIVE_SECS) system += `\n\n${TEAM_RULE}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
     if (cal) system += `\n\n${cal}`;
   }
@@ -473,27 +481,25 @@ async function runActions(flow: Flow, x: Ctx, d: EngineDeps, mode: Flow["mode"],
         }
         case "ai_reply": {
           needChat(a.type);
-          // a team member typing in the app right now owns the chat: Zaid stays out
+          // a chat the team is handling waits for the team first; a burst gets one answer
           const official = d.channel.kind === "official";
-          const team = official ? await teamWroteAt(d, x.chat) : undefined;
-          // ... and so does a chat a team member answered within the last day, and a message the merchant already followed with another
-          const stayOut = async () => {
-            if (!official) return false;
-            const recent = await d.store.messages(x.chat, 40);
-            const owned = teamRepliedAt(recent);
-            return (!!owned && x.now / 1000 - owned < TEAM_OWNS_SECS) || newerInbound(recent, x.msg?.id);
-          };
-          let out = (team && x.now / 1000 - team < TEAM_QUIET_SECS) || (await stayOut()) ? SKIP : await runAi(a, x, d);
+          const hold = official ? await teamHold(d, x) : "answer";
+          if (hold === "wait" && x.msg) await d.state.set(`flow:wait:${x.msg.id}`, "1", { ex: 2 * 86400 });
+          let out = hold === "answer" ? await runAi(a, x, d) : SKIP;
           // a broken model output (letters from another language) is asked again once, then handed to the team
           if (official && FOREIGN_SCRIPT.test(out)) out = await runAi(a, x, d);
           if (official && FOREIGN_SCRIPT.test(out)) out = UNSURE_LINE;
           // the merchant may have written again, or the team answered, while the model was thinking
-          if (!out.includes(SKIP) && (await stayOut())) out = SKIP;
+          if (official && !out.includes(SKIP)) {
+            const again = await teamHold(d, x);
+            if (again === "wait" && x.msg) await d.state.set(`flow:wait:${x.msg.id}`, "1", { ex: 2 * 86400 });
+            if (again !== "answer") out = SKIP;
+          }
           if (!out.includes(SKIP) && d.meetings && mode === "auto") out = await d.meetings.apply(out, x.chat, x.chatName);
           if (!out.includes(SKIP) && d.channel.kind === "official") out = withHours(out, x.now);
           x.vars.ai = out === SKIP ? "" : out;
           output = x.vars.ai;
-          detail = out.includes(SKIP) ? "Claude chose not to reply" : await deliver(x.chat, out, a.quote ? x.msg?.id : undefined);
+          detail = hold === "wait" ? "waiting 15 minutes for the team" : out.includes(SKIP) ? "Claude chose not to reply" : await deliver(x.chat, out, a.quote ? x.msg?.id : undefined);
           break;
         }
         case "agent": {
@@ -822,17 +828,20 @@ export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: {
   let done = 0;
   for (const c of await d.store.conversations(scan, undefined, nowS)) {
     if (done >= max || (d.deadline && Date.now() > d.deadline)) break;
-    const m = c.last;
+    // the Business app's away message is not an answer: look past it
+    const m = c.last && isAppAuto(c.last) ? (await d.store.messages(c.waId, 6)).filter((k) => !isAppAuto(k)).pop() : c.last;
     if (!m || m.direction !== "in" || m.type === "reaction" || c.waId.endsWith("@g.us")) continue;
-    if (nowS - m.timestamp < minAgeMinutes * 60 || !c.windowClosesAt || c.windowClosesAt - nowS < 1800) continue;
+    const waiting = !!(await d.state.get(`flow:wait:${m.id}`));
+    if (nowS - m.timestamp < (waiting ? TEAM_WAIT_SECS : minAgeMinutes * 60) || !c.windowClosesAt || c.windowClosesAt - nowS < 1800) continue;
     const chatName = await d.store.getName(c.waId);
     const tags = await getTags(d.state, c.waId);
     for (const flow of flows) {
       const x = makeCtx(flow, d, now, m, chatName, tags);
       try {
         if (!(await matches(flow, x, d)).ok) continue;
-        // a message the flow already looked at and chose to skip (personal, bot, team) stays skipped
-        if (await d.state.get(`flow:seen:${flow.id}:${m.id}`)) continue;
+        // a message the flow already looked at and chose to skip (personal, bot) stays skipped,
+        // unless it was only waiting for the team, which had its 15 minutes
+        if (!waiting && (await d.state.get(`flow:seen:${flow.id}:${m.id}`))) continue;
         if (!(await d.state.set(`flow:catch:${flow.id}:${m.id}`, "1", { ex: 7 * 86400, nx: true }))) continue;
         done++;
         const fired = await fire(flow, x, d);

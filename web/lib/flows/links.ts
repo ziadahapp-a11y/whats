@@ -84,16 +84,15 @@ export function withHours(text: string, ms: number): string {
 
 /** Changing the account email is the merchant's own step, for security and privacy. */
 export const EMAIL_RULE = `When the merchant asks to change the account email (or the email the reports go to), the team never changes it for them, for security and privacy. Reply with exactly this, adding the dashboard link as a button labelled لوحة زيادة: حياك الله، حرصًا على أمان حسابكم وخصوصية بياناتكم، تعديل الايميل يكون منكم مباشرة: ادخل لوحة زيادة، واضغط الأيقونة أعلى يسار الشاشة ← الملف الشخصي ← عدّل الايميل واحفظ. وبعدها توصلكم التقارير والتنبيهات على الايميل الجديد. ولو واجهتكم أي مشكلة في الدخول، ارسلوا لي اسم المتجر وايميل الحساب الحالي في رسالة وحدة. If the merchant then says they do not have access to the current email, reply with exactly this and do not hand over to the team: حياك الله، لدواعي الأمان والخصوصية ما نقدر نغيّر الايميل من طرفنا. يلزم عضو فريقكم اللي فعّل التطبيق يدخل لوحة زيادة بالايميل الحالي ويغيّره للايميل المطلوب من الملف الشخصي. Only if the merchant then says the team member who activated the app is no longer with the store or cannot log in, the team steps in: ask in one line for the store name and the new email, and once both are in the conversation, hand over to the team with the usual handover text.`;
-/** A team member wrote from the app within this many seconds: Zaid does not answer at all. */
-export const TEAM_QUIET_SECS = 15 * 60;
-/** ... and within this many, Zaid only closes or skips. */
-export const TEAM_ACTIVE_SECS = 30 * 60;
-export const TEAM_RULE = `Lines marked "Team" were typed by a team member in the WhatsApp Business app, and that person is handling this conversation now. Output exactly [[SKIP]], unless the merchant's latest message only closes the conversation (thanks, ok, a sticker), in which case send the one short closing line.`;
+/** A merchant in a chat the team is handling waits this long for the team before Zaid answers. */
+export const TEAM_WAIT_SECS = 15 * 60;
 
-/** Once a team member has answered the merchant from the app, the chat is theirs for this long: Zaid sends nothing. */
+/** A team member's answer from the app keeps the chat theirs for this long: each new merchant message waits TEAM_WAIT_SECS for them first. */
 export const TEAM_OWNS_SECS = 24 * 3600;
 /** The WhatsApp Business app's own away/greeting message, which is not a team member answering. */
 const APP_AUTO = /ان لم تتلقى رد خلال 24 ساعة|كيف اساعدك اليوم/;
+export const isAppAuto = (m: { direction: string; source?: string; text?: string; caption?: string }) =>
+  m.direction === "out" && m.source === "business_app" && APP_AUTO.test(m.text ?? m.caption ?? "");
 
 type Msg = { id: string; direction: "in" | "out"; type: string; text?: string; caption?: string; timestamp: number; source?: string };
 
@@ -106,7 +105,7 @@ export function teamRepliedAt(msgs: readonly Msg[]): number | undefined {
   for (const m of msgs) {
     if (m.type === "reaction") continue;
     if (m.direction === "in") lastIn = m.timestamp;
-    else if (m.source === "business_app" && lastIn !== undefined && m.timestamp - lastIn < TEAM_OWNS_SECS && !APP_AUTO.test(m.text ?? m.caption ?? "")) at = m.timestamp;
+    else if (m.source === "business_app" && lastIn !== undefined && m.timestamp - lastIn < TEAM_OWNS_SECS && !isAppAuto(m)) at = m.timestamp;
   }
   return at;
 }
@@ -115,6 +114,17 @@ export function teamRepliedAt(msgs: readonly Msg[]): number | undefined {
 export function newerInbound(msgs: readonly Msg[], id: string | undefined): boolean {
   const i = id ? msgs.findIndex((m) => m.id === id) : -1;
   return i >= 0 && msgs.slice(i + 1).some((m) => m.direction === "in" && m.type !== "reaction");
+}
+
+/** When a team member last wrote anything from the app (a broadcast too), leaving out the app's away message. */
+export function lastTeamAt(msgs: readonly Msg[]): number | undefined {
+  return msgs.filter((m) => m.direction === "out" && m.source === "business_app" && !isAppAuto(m)).pop()?.timestamp;
+}
+
+/** Someone on our side (Zaid or the team) already wrote after this message; the app's away message does not count. */
+export function answeredAfter(msgs: readonly Msg[], id: string | undefined): boolean {
+  const i = id ? msgs.findIndex((m) => m.id === id) : -1;
+  return i >= 0 && msgs.slice(i + 1).some((m) => m.direction === "out" && m.type !== "reaction" && !isAppAuto(m));
 }
 
 /** Letters from scripts Zaid never writes (Korean, Chinese, Japanese, Cyrillic, Hebrew, Hindi, Thai): a broken model output. */

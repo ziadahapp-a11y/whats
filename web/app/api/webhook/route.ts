@@ -48,6 +48,19 @@ export async function POST(req: Request) {
           console.error("official flows failed", e);
         }
       });
+    } else {
+      // Delivery receipts arrive all day: at most every 2 minutes they also wake the due work
+      // (a merchant who waited 15 minutes for the team, follow-ups, meeting reminders).
+      after(async () => {
+        try {
+          const base = rawFor(cfg);
+          const state = scopeRaw(base, "off:");
+          if (!(await state.set("tick", "1", { ex: 120, nx: true }))) return;
+          await runOfficialFlows([], { base, store, graph, normalize: normalizePhone, state });
+        } catch (e) {
+          console.error("official tick failed", e);
+        }
+      });
     }
   } catch (e) {
     // A non-2xx makes Meta retry the delivery later, so nothing is lost.

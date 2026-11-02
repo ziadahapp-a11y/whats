@@ -1040,7 +1040,7 @@ test("team ownership: a team answer holds the chat for a day; broadcasts and the
   assert.equal(newerInbound(burst, "missing"), false);
 });
 
-test("official Zaid: one reply per burst, silent in a chat the team answered, and never sends foreign letters", async () => {
+test("official Zaid: one reply per burst, waits 15 minutes in a chat the team answered, and never sends foreign letters", async () => {
   const { UNSURE_LINE, STRICT_RULE } = await import("./flows/links");
   const official = (reply: string[]) => {
     const systems: string[] = [];
@@ -1062,9 +1062,10 @@ test("official Zaid: one reply per burst, silent in a chat the team answered, an
     assert.equal(systems.length, 1);
     assert.ok(systems[0].includes(STRICT_RULE));
   }
-  // the team answered 31 minutes ago: Zaid stays out and the model is not called
+  // the team answered 31 minutes ago: the merchant's new message waits 15 minutes for the team, then Zaid answers
   {
-    const { deps, store, sent, systems } = official(["رد"]);
+    const { catchUpUnanswered } = await import("./flows/engine");
+    const { deps, store, sent, systems } = official(["رد زيد"]);
     await store.saveMessage(msg({ id: "q0", timestamp: t - 40 * 60 }));
     await store.saveMessage({ id: "t0", waId: CHAT, direction: "out", type: "text", text: "الالغاء من زد", timestamp: t - 31 * 60, source: "business_app" });
     const m = msg({ id: "q1", timestamp: t - 30 });
@@ -1072,6 +1073,33 @@ test("official Zaid: one reply per burst, silent in a chat the team answered, an
     await runFlows(deps, [m], NOW);
     assert.equal(sent.length, 0);
     assert.equal(systems.length, 0);
+    // the app's away message right after it is not an answer
+    await store.saveMessage({ id: "aw", waId: CHAT, direction: "out", type: "text", text: "حياك الله، كيف اساعدك اليوم؟", timestamp: t - 29, source: "business_app" });
+    assert.equal((await catchUpUnanswered(deps, NOW + 10 * 60_000)).length, 0); // still inside the 15 minutes
+    await catchUpUnanswered(deps, NOW + 15 * 60_000);
+    assert.deepEqual(sent.map((x) => x.text), ["رد زيد"]);
+  }
+  // ... but if the team answers inside the 15 minutes, Zaid sends nothing
+  {
+    const { catchUpUnanswered } = await import("./flows/engine");
+    const { deps, store, sent } = official(["رد زيد"]);
+    await store.saveMessage(msg({ id: "r0", timestamp: t - 40 * 60 }));
+    await store.saveMessage({ id: "rt", waId: CHAT, direction: "out", type: "text", text: "أبشر", timestamp: t - 31 * 60, source: "business_app" });
+    const m = msg({ id: "r1", timestamp: t - 30 });
+    await store.saveMessage(m);
+    await runFlows(deps, [m], NOW);
+    await store.saveMessage({ id: "rt2", waId: CHAT, direction: "out", type: "text", text: "تم", timestamp: t + 300, source: "business_app" });
+    await catchUpUnanswered(deps, NOW + 16 * 60_000);
+    assert.equal(sent.length, 0);
+  }
+  // a reply to a broadcast sent hours ago is answered right away
+  {
+    const { deps, store, sent } = official(["رد زيد"]);
+    await store.saveMessage({ id: "bc", waId: CHAT, direction: "out", type: "text", text: "اشتراكك ينتهي", timestamp: t - 3 * 3600, source: "business_app" });
+    const m = msg({ id: "b2", timestamp: t - 30 });
+    await store.saveMessage(m);
+    await runFlows(deps, [m], NOW);
+    assert.equal(sent.length, 1);
   }
   // Korean letters in the output: asked again once, then handed to the team
   {
