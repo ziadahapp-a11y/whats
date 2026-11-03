@@ -8,7 +8,8 @@ import type { RawKV } from "./wa/auth";
 const TOKEN = "meta:gcal:token";
 const SETTINGS = "meta:gcal:settings";
 const STATE = "meta:gcal:state:";
-const SCOPES = ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.freebusy", "openid", "email"];
+// spreadsheets.readonly lets Zaid read the merchants sheet (lib/merchants.ts) with the same account
+const SCOPES = ["https://www.googleapis.com/auth/calendar.events", "https://www.googleapis.com/auth/calendar.freebusy", "https://www.googleapis.com/auth/spreadsheets.readonly", "openid", "email"];
 const API = "https://www.googleapis.com/calendar/v3";
 
 export type Settings = {
@@ -197,7 +198,8 @@ export type CalEvent = {
 export class Calendar {
   constructor(private base: RawKV, private env: Env = process.env, private fetchImpl: typeof fetch = fetch) {}
 
-  private async token(): Promise<string> {
+  /** a fresh access token for the connected Google account (Calendar, and Sheets for lib/merchants.ts) */
+  async accessToken(): Promise<string> {
     const s = JSON.parse((await this.base.get(TOKEN)) ?? "null") as Stored | null;
     if (!s?.refresh) throw new Error("Google Calendar is not connected.");
     if (s.access && s.exp && s.exp > Date.now() + 60_000) return s.access;
@@ -207,7 +209,7 @@ export class Calendar {
   }
 
   private async api(path: string, init: RequestInit = {}) {
-    const res = await this.fetchImpl(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${await this.token()}`, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000) });
+    const res = await this.fetchImpl(`${API}${path}`, { ...init, headers: { Authorization: `Bearer ${await this.accessToken()}`, "content-type": "application/json" }, signal: AbortSignal.timeout(15_000) });
     const data: any = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(`Google Calendar ${res.status}: ${data?.error?.message ?? res.statusText}`);
     return data;

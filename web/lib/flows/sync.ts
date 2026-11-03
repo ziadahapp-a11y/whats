@@ -15,6 +15,7 @@ import { catchUpUnanswered, runFlows, type Channel, type EngineDeps } from "./en
 import { flowsFor, isPaused } from "./storage";
 import { ctaPayload, linkButton, plainLinks } from "./links";
 import { sendFollowups } from "./followup";
+import { findMerchant, merchantContext } from "../merchants";
 import { meetings, sendMeetingReminders } from "./meetings";
 import type { StoredMessage } from "../store";
 
@@ -106,7 +107,7 @@ export async function runOfficialFlows(fresh: StoredMessage[], io: OfficialIO) {
   const flows = await flowsFor(io.base, "official");
   if (!flows.length || (await isPaused(io.base))) return [];
   const channel = officialChannel(io);
-  const deps: EngineDeps = { flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base), meetings: meetings(io.base, io.store) };
+  const deps: EngineDeps = { flows, state: io.state, store: io.store, channel, deadline: Date.now() + 45_000, ...engineExtras(io.base), meetings: meetings(io.base, io.store), merchant: async (chat) => merchantContext(await findMerchant(io.base, chat)) };
   const logs = await runFlows(deps, fresh);
   // a merchant whose last message got no answer gets one more look while the window is open
   logs.push(...(await catchUpUnanswered(deps).catch((e) => (console.error("catch-up failed", e), []))));

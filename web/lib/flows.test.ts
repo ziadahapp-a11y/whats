@@ -1133,3 +1133,29 @@ test("official Zaid ignores the per-chat cooldown, so a follow-up question is st
   assert.equal(sent.length, 2);
   assert.ok(systems[1].includes(DIRECT_RULE));
 });
+
+test("merchant lookup: the sheet row for this phone becomes a <merchant> block for Zaid", async () => {
+  const { buildIndex, normPhone, merchantContext, findMerchant } = await import("./merchants");
+  assert.equal(normPhone("0510655869"), "966510655869");
+  assert.equal(normPhone("+966 51 065 5869"), "966510655869");
+  const head = ["Store ID", "Store Name", "Phone", "Email", "Platform", "Plan", "End Date", "Subscription Status"];
+  const ix = buildIndex([{ values: [head, ["147887", "متجر نسمتي", "966501253332 / 966510655869", "a@b.c", "زد", "النمو الشهرية", "2026-11-25", "paid"]] }]);
+  assert.equal(ix["966510655869"][0].store, "متجر نسمتي");
+  assert.equal(ix["966501253332"][0].plan, "النمو الشهرية");
+  const block = merchantContext(ix["966510655869"]);
+  assert.match(block, /المتجر: متجر نسمتي، المنصة: زد، الباقة: النمو الشهرية، ينتهي الاشتراك: 2026-11-25، الحالة: مشترك \(مدفوع\)/);
+  assert.ok(!block.includes("a@b.c"));
+  assert.equal(merchantContext([]), "");
+  // read once through Google Sheets, then served from the cache
+  const kv = new MemoryRawKV();
+  await kv.set("meta:gcal:token", JSON.stringify({ refresh: "r", access: "tok", exp: Date.now() + 3600_000 }));
+  let calls = 0;
+  const fetchImpl = (async (url: string) => {
+    calls++;
+    assert.match(String(url), /sheets\.googleapis\.com/);
+    return new Response(JSON.stringify({ valueRanges: [{ values: [head, ["1", "متجر نسمتي", "966510655869", "", "زد", "النمو", "", "paid"]] }] }));
+  }) as typeof fetch;
+  assert.equal((await findMerchant(kv, "966510655869", {}, fetchImpl))[0].store, "متجر نسمتي");
+  assert.equal((await findMerchant(kv, "966500000000", {}, fetchImpl)).length, 0);
+  assert.equal(calls, 1);
+});

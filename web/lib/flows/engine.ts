@@ -51,6 +51,8 @@ export type EngineDeps = {
   knowledge?: (query: string) => Promise<string>;
   /** official number: free times from Google Calendar for Zaid, and booking the one picked */
   meetings?: Meetings;
+  /** official number: what we know about the merchant writing (store, plan, dates), as a system-prompt block */
+  merchant?: (chat: string) => Promise<string>;
   /** validates webhook addresses; defaults to public-https-only with a DNS check */
   checkUrl?: (url: string) => Promise<string>;
 };
@@ -291,6 +293,8 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
     system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}\n\n${DIRECT_RULE}`;
+    const who = await d.merchant?.(x.chat).catch(() => "");
+    if (who) system += `\n\n${who}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
     if (cal) system += `\n\n${cal}`;
   }
