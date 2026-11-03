@@ -8,6 +8,7 @@ import { Calendar, connection, type CalEvent, freeSlots, getSettings, localIso, 
 
 export const HANDOFF = "جاري تحويلك للفريق المختص\n\nان لم تتلقى رد خلال 24 ساعة، فضلاً عاود الإرسال فذلك بسبب كثرة الرسائل أو اجازة الأسبوع";
 const MARKER = /\[\[\s*BOOK\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s+([^\s\]]+)(?:\s+([^\s\]]+))?\s*\]\]/i;
+const MOVE = /\[\[\s*MOVE\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s*\]\]/i;
 const EMAIL = /^[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}$/i;
 
 export type Meetings = {
@@ -17,8 +18,9 @@ export type Meetings = {
   apply(reply: string, chat: string, name?: string): Promise<string>;
 };
 
-async function free(cal: Calendar, s: Settings, now: number) {
-  const busy = await cal.busy(now, now + (s.aheadDays + 1) * 86400000);
+/** free slots; `own` is the merchant's meeting being moved, so its own time does not block the new one */
+async function free(cal: Calendar, s: Settings, now: number, own?: CalEvent) {
+  const busy = (await cal.busy(now, now + (s.aheadDays + 1) * 86400000)).filter((b) => !own || b.start !== own.start || b.end !== own.end);
   return freeSlots(s, busy, now, 60);
 }
 
@@ -42,10 +44,19 @@ export function meetings(base: RawKV, store?: Store, now: () => number = Date.no
       const ev = await booked(s, chat, name);
       if (ev) {
         const link = ev.meet ? ` The meeting link is ${ev.meet}; write it as [دخول الاجتماع](${ev.meet}).` : " There is no meeting link yet; say the team will send it before the meeting.";
-        return `Meetings: this merchant already has a meeting booked ${slotLabel(ev.start, s.tz)} (${s.tz}).${link}
-- Do not book another meeting, do not offer other times and never output [[BOOK]].
-- If they ask for a meeting or about it, tell them this time.
-- If they want to move or cancel it, hand over to the team as usual.`;
+        const head = `Meetings: this merchant already has a meeting booked ${slotLabel(ev.start, s.tz)} (${s.tz}).${link}
+- Do not book another meeting and never output [[BOOK]].
+- If they ask for a meeting or about it, tell them this time.`;
+        // only a meeting Zaid booked is moved by Zaid; one the team added by hand stays with the team
+        let times: number[] = [];
+        if (ev.chat) times = await free(cal, s, now(), ev).then((f) => spread(f.filter((t) => t !== ev.start), s.tz)).catch(() => []);
+        if (!times.length) return `${head}\n- If they want to move or cancel it, hand over to the team as usual.`;
+        return `${head}
+- If they say this time does not suit them or ask to move it, offer two or three of the free times below, copying each Arabic label exactly. Never offer or accept any other time; if they ask for one that is not listed, say it is not available and offer the listed times closest to it.
+- Only when they have clearly chosen one of these times, write a short confirmation and end the reply with exactly [[MOVE <time in brackets>]], for example [[MOVE ${localIso(times[0], s.tz)}]]. The system moves the meeting and emails them the new time.
+- If they want to cancel it, or none of the times suits them, hand over to the team as usual.
+Free times (${s.tz}):
+${times.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n")}`;
       }
       let offer: number[];
       try {
@@ -65,6 +76,21 @@ ${list}`;
     },
 
     async apply(reply, chat, name) {
+      const mv = MOVE.exec(reply);
+      if (mv) {
+        try {
+          const s = await getSettings(base);
+          const ev = await booked(s, chat, name);
+          if (!ev?.chat) throw new Error("no meeting of Zaid's to move");
+          const slot = (await free(cal, s, now(), ev)).find((t) => localIso(t, s.tz) === mv[1]);
+          if (slot === undefined) throw new Error(`${mv[1]} is not free any more`);
+          const moved = await cal.move(ev.id, slot, slot + s.minutes * 60000, s.tz);
+          return `تم تعديل موعدنا إلى ${slotLabel(slot, s.tz)} بإذن الله، ووصلك التحديث على الإيميل.${meetLine(moved.meet ? moved : ev)}`;
+        } catch (e) {
+          console.error("meeting move failed", chat, e);
+          return `ما قدرت أعدل الموعد تلقائياً، والفريق بيأكده لك.\n\n${HANDOFF}`;
+        }
+      }
       const m = MARKER.exec(reply);
       if (!m) return reply;
       const text = reply.replace(MARKER, "").trim();

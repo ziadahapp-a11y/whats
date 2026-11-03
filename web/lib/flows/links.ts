@@ -141,6 +141,26 @@ export const STRICT_RULE = `Strict rules for every reply:
 /** Zaid only runs when the team is not answering (or let 15 minutes pass), so a real question always gets an answer. */
 export const DIRECT_RULE = `Nobody from the team is answering this message: you are. Never output [[SKIP]] for a real question or request. When the answer is in <knowledge> or in the conversation (our own earlier messages count, for example a price or offer we already sent), answer it directly in one or two short sentences. Only when the answer is in neither, reply with the unsure line from the rules above so the team takes it.`;
 
+/** Words that mark a chat as setting up or changing a meeting time. */
+const MEETING_TALK = /اجتماع|إجتماع|ميتنق|ميتنج|موعد|مواعيد|جدولة|جدول[هة]|الساع[هة]|وقت صلا|meeting|zoom|\bmeet\b|\bcall\b/i;
+
+const TIME_WORDS = /[0-9٠-٩]|متاح|مناسب|يناسب|وقت|اليوم|بكر[هة]|بكرا|غد[اًا]?|الصبح|الظهر|العصر|المغرب|العشاء|مساء|صباح|الأحد|الاحد|الاثنين|الإثنين|الثلاثاء|الأربعاء|الاربعاء|الخميس|السبت|الجمعة|ألغي|الغي|أأجل|اأجل|أجل|تأجيل|تغيير|اغير|أغير/;
+const bodyText = (m: Msg) => m.text ?? m.caption ?? "";
+
+/**
+ * Whether the merchant is arranging a meeting: the message or one of the few before it (within two hours)
+ * talks about a meeting or a time. Zaid answers these at once even while the team is in the chat, because
+ * it holds the calendar.
+ */
+export function meetingTalk(msgs: readonly Msg[], id: string): boolean {
+  const i = msgs.findIndex((m) => m.id === id);
+  if (i < 0) return false;
+  const at = msgs[i].timestamp;
+  // the merchant's own words must be about a time, so a "تمام شكرا" after the team set the meeting stays with the team
+  if (!(MEETING_TALK.test(bodyText(msgs[i])) || TIME_WORDS.test(bodyText(msgs[i])))) return false;
+  return msgs.slice(Math.max(0, i - 6), i + 1).some((m) => at - m.timestamp <= 7200 && !isAppAuto(m) && MEETING_TALK.test(bodyText(m)));
+}
+
 /** What each plan includes, from ziadah.app/pricing. Zaid may only name a feature for a plan when it is listed here. */
 export const PLANS_RULE = `Plan features (the only source for what a plan includes, it overrides anything else):
 - الانطلاقة: اقتراحات صفحة المنتج، عروض المنتجات، عروض الكميات، التحليلات، 60 نقطة ذكاء اصطناعي. لا تشمل: الكوبونات، الوصول للشحن المجاني.

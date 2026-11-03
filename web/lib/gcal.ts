@@ -234,6 +234,13 @@ export class Calendar {
     return toEvent(e);
   }
 
+  /** moves an event to a new time and emails the guests the update */
+  async move(id: string, start: number, end: number, tz: string): Promise<CalEvent> {
+    const body = { start: { dateTime: new Date(start).toISOString(), timeZone: tz }, end: { dateTime: new Date(end).toISOString(), timeZone: tz } };
+    const e = await this.api(`/calendars/primary/events/${encodeURIComponent(id)}?sendUpdates=all`, { method: "PATCH", body: JSON.stringify(body) });
+    return toEvent(e);
+  }
+
   /** timed, non-cancelled events that start in [from, to): meetings Zaid booked and any others */
   async events(from: number, to: number): Promise<CalEvent[]> {
     const q = new URLSearchParams({ timeMin: new Date(from).toISOString(), timeMax: new Date(to).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "250" });

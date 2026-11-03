@@ -1172,3 +1172,69 @@ test("an unasked offer at the end of Zaid's reply is dropped", async () => {
   assert.equal(dropOffer("متى يناسبك الاجتماع؟"), "متى يناسبك الاجتماع؟");
   assert.equal(dropOffer("حياك الله، العفو، حاضرين لأي استفسار."), "حياك الله، العفو، حاضرين لأي استفسار.");
 });
+
+test("meeting talk: Zaid answers a merchant arranging a time at once, even while the team is in the chat", async () => {
+  const { meetingTalk } = await import("./flows/links");
+  const m = (id: string, direction: "in" | "out", timestamp: number, text: string, source?: "business_app" | "api") => ({ id, direction, type: "text", text, timestamp, source });
+  const chat = [
+    m("t1", "out", 100, "لو حابين جدولة اجتماع مع المختص حاضرين", "business_app"),
+    m("i1", "in", 460, "ممتاز . اليوم مناسب على ٤ إذا متاح"),
+    m("i2", "in", 1000, "٣ وقت صلاة غير مناسب"),
+    m("t2", "out", 1001, "ابشر", "business_app"),
+    m("i3", "in", 1002, "حسب المتاح عندكم"),
+    m("t3", "out", 1060, "4 اتضح وجود حجز سابق لكن مجرد الانتهاء ببلغك وندخل اجتماعنا", "business_app"),
+    m("i4", "in", 1070, "تمام .. شكرا"),
+  ];
+  assert.equal(meetingTalk(chat, "i1"), true);
+  assert.equal(meetingTalk(chat, "i3"), true);
+  assert.equal(meetingTalk(chat, "i4"), false); // thanks after the team set it stays with the team
+  assert.equal(meetingTalk([m("x", "out", 0, "أبشر", "business_app"), m("y", "in", 10, "كم سعر النمو؟")], "y"), false);
+  assert.equal(meetingTalk([m("x", "out", 0, "متى يناسبك الاجتماع؟", "business_app"), m("y", "in", 9000, "بكره")], "y"), false); // over two hours
+
+  const ai: AiClient = async () => "هذي الأوقات المتاحة";
+  const s = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSecs: 0 } as never)], { ai });
+  s.deps.channel = { ...s.deps.channel, kind: "official" };
+  s.deps.meetings = { context: async () => "Meetings: free times", apply: async (r: string) => r };
+  const t = Math.floor(NOW / 1000);
+  await s.store.saveMessage({ id: "tt", waId: CHAT, direction: "out", type: "text", text: "لو حابين جدولة اجتماع", timestamp: t - 120, source: "business_app" });
+  await s.store.saveMessage({ id: "tb", waId: CHAT, direction: "out", type: "text", text: "ابشر", timestamp: t - 40, source: "business_app" });
+  const q = msg({ id: "q", text: "حسب المتاح عندكم", timestamp: t - 30 });
+  await s.store.saveMessage(q);
+  await runFlows(s.deps, [q], NOW);
+  assert.deepEqual(s.sent.map((x) => x.text), ["هذي الأوقات المتاحة"]);
+});
+
+test("a [[MOVE]] marker moves the merchant's Zaid-booked meeting to a free time; a team meeting stays with the team", async () => {
+  const { meetings, HANDOFF } = await import("./flows/meetings");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
+  await base.set("meta:gcal:settings", JSON.stringify({ noticeHours: 2 }));
+  const store = new Store(new MemoryKV());
+  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const start = Date.UTC(2026, 9, 29, 7, 45); // 10:45 Riyadh, booked by Zaid
+  const ev = { id: "z1", start, end: start + 1800000, chat: "966500000001", meet: "https://meet.google.com/abc" };
+  const moved: any[] = [];
+  const cal: any = {
+    busy: async () => [{ start: ev.start, end: ev.end }],
+    events: async () => [ev],
+    book: async () => assert.fail("never books a second meeting"),
+    move: async (id: string, s: number, e: number) => (moved.push({ id, s, e }), { ...ev, start: s, end: e }),
+  };
+  const m = meetings(base, store, () => now, cal);
+  const ctx = await m.context("966500000001");
+  assert.match(ctx, /already has a meeting/);
+  assert.match(ctx, /\[\[MOVE/);
+  assert.ok(!ctx.includes("[2026-10-29T10:45]")); // its own time is not offered again
+  const iso = /\[(2026-\d\d-\d\dT\d\d:\d\d)\]/.exec(ctx.split("Free times")[1])![1];
+  const out = await m.apply(`تمام [[MOVE ${iso}]]`, "966500000001");
+  assert.equal(moved.length, 1);
+  assert.equal(moved[0].id, "z1");
+  assert.match(out, /^تم تعديل موعدنا إلى .+ بإذن الله، ووصلك التحديث على الإيميل\.\n\[دخول الاجتماع\]\(https:\/\/meet\.google\.com\/abc\)$/);
+  assert.ok((await m.apply("[[MOVE 2026-10-29T03:00]]", "966500000001")).endsWith(HANDOFF));
+  // the team added this one by hand: Zaid does not move it
+  const team = { id: "t1", start, end: start + 1800000, summary: "اجتماع متجر عسل البركة", text: "\n" };
+  cal.events = async () => [team];
+  assert.match(await m.context("966545432944", "أبو صلاح (متجر البركة )"), /hand over to the team/);
+  assert.ok((await m.apply("[[MOVE 2026-10-29T11:30]]", "966545432944", "أبو صلاح (متجر البركة )")).endsWith(HANDOFF));
+  assert.equal(moved.length, 1);
+});
