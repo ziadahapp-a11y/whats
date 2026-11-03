@@ -141,6 +141,15 @@ export const STRICT_RULE = `Strict rules for every reply:
 /** Zaid only runs when the team is not answering (or let 15 minutes pass), so a real question always gets an answer. */
 export const DIRECT_RULE = `Nobody from the team is answering this message: you are. Never output [[SKIP]] for a real question or request. When the answer is in <knowledge> or in the conversation (our own earlier messages count, for example a price or offer we already sent), answer it directly in one or two short sentences. Only when the answer is in neither, reply with the unsure line from the rules above so the team takes it.`;
 
+/** What each plan includes, from ziadah.app/pricing. Zaid may only name a feature for a plan when it is listed here. */
+export const PLANS_RULE = `Plan features (the only source for what a plan includes, it overrides anything else):
+- الانطلاقة: اقتراحات صفحة المنتج، عروض المنتجات، عروض الكميات، التحليلات، 60 نقطة ذكاء اصطناعي. لا تشمل: الكوبونات، الوصول للشحن المجاني.
+- النمو: كل ما في الانطلاقة + اقتراحات السلة، الاقتراح بعد الإضافة وبعد الحذف، الكوبونات، عضوين للفريق، 600 نقطة. لا تشمل: الوصول للشحن المجاني، عروض الاستبدال، الاقتراح بعد الدفع، اقتراحات قيمة السلة.
+- الاحترافية: كل ما في النمو + الاقتراح بعد الدفع، اقتراحات قيمة السلة، عروض الاستبدال، الوصول للشحن المجاني، تحليلات لكل منتج، دعم القالب، 6000 نقطة. لا تشمل: الصفحة الرئيسية، صفحة التصنيف، صفحة إتمام الطلب.
+- الأعمال: كل ما في الاحترافية + الصفحة الرئيسية، صفحة التصنيف، صفحة إتمام الطلب، فريق غير محدود، مدير نجاح، مراجعة شهرية، دعم مخصص، 60000 نقطة.
+- كل الباقات فيها تجربة 7 أيام.
+Never say a plan includes a feature unless it is listed for that plan above. When asked about a feature in a plan that excludes it, say plainly it is not in their plan and name the lowest plan that has it. Never list a plan's features unless the merchant asked about them, and then only the ones they asked about. For a feature not listed above (for example الشراء معاً أو اشترِ أكثر ووفّر أكثر), reply with the unsure line.`;
+
 /** A closing offer the merchant did not ask for ("تبين نراجع لك...؟"): taken off the end of a reply that says something else. */
 const OFFER = /(?:^|[.!؟?\n]\s*)((?:تب[يغ]ن?|تبون|تحب(?:ين|ون)?|ودك|ودكم)\s[^.!؟?\n]*[؟?])\s*$/;
 export function dropOffer(text: string): string {
