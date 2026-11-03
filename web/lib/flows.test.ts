@@ -774,6 +774,18 @@ test("a link in an official reply becomes one cta_url button, with a text fallba
   assert.deepEqual(sent[1], { type: "text", text: { body: "اقرأ المقال: https://ziadah.app/a" } });
   const saved = await store.messages("966500000009", 5);
   assert.ok(saved.some((m) => m.type === "interactive" && m.text?.includes("[المقال: https://ziadah.app/a]")));
+  // the support-ticket reply carries the picture of the help button
+  const { ticketImage } = await import("./flows/links");
+  assert.equal(ticketImage("ارفع تذكرة من لوحة زيادة", "https://x.app"), "https://x.app/help/ticket.png");
+  assert.equal(ticketImage("حياك الله", "https://x.app"), undefined);
+  assert.equal(ticketImage("ارفع تذكرة", ""), undefined);
+  assert.deepEqual((ctaPayload({ body: "b", label: "l", url: "https://u.example" }, "https://x.app/help/ticket.png").interactive as any).header, { type: "image", image: { link: "https://x.app/help/ticket.png" } });
+  const prev = process.env.APP_URL;
+  process.env.APP_URL = "https://x.app";
+  reject = false;
+  await ch.sendText("966500000009", "حياك الله، ارفع تذكرة من [لوحة زيادة](https://web.ziadah.app/login)");
+  assert.equal((sent[2].interactive as any).header.image.link, "https://x.app/help/ticket.png");
+  if (prev === undefined) delete process.env.APP_URL; else process.env.APP_URL = prev;
 });
 
 test("official ai replies are told how to name link buttons; personal ones are not", async () => {

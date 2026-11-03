@@ -13,7 +13,7 @@ import { fileUrl, loadFile, publicBase, saveFile } from "../files";
 import { knowledgeContext } from "../kb/store";
 import { catchUpUnanswered, runFlows, type Channel, type EngineDeps } from "./engine";
 import { flowsFor, isPaused } from "./storage";
-import { ctaPayload, linkButton, plainLinks } from "./links";
+import { ctaPayload, linkButton, plainLinks, ticketImage } from "./links";
 import { sendFollowups } from "./followup";
 import { findMerchant, merchantContext } from "../merchants";
 import { meetings, sendMeetingReminders } from "./meetings";
@@ -75,7 +75,11 @@ export function officialChannel(io: OfficialIO): Channel {
       const button = linkButton(text);
       if (button) {
         try {
-          const res = await io.graph.sendMessage(chat, ctaPayload(button), replyTo);
+          const image = ticketImage(text, publicBase());
+          const res = await io.graph.sendMessage(chat, ctaPayload(button, image), replyTo).catch((e) => {
+            if (!image) throw e;
+            return io.graph.sendMessage(chat, ctaPayload(button), replyTo); // the picture must never cost the reply
+          });
           await save(res.messageId, "interactive", `${button.body}\n[${button.label}: ${button.url}]`);
           return res.messageId;
         } catch {

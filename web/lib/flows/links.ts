@@ -53,10 +53,14 @@ export function linkButton(text: string): LinkButton | null {
 export const plainLinks = (text: string) => text.replace(new RegExp(MD.source, "g"), (_m, l, u) => `${l}: ${u}`);
 
 /** The Cloud API payload for one link button. */
-export const ctaPayload = (b: LinkButton) => ({
+export const ctaPayload = (b: LinkButton, image?: string) => ({
   type: "interactive",
-  interactive: { type: "cta_url", body: { text: b.body }, action: { name: "cta_url", parameters: { display_text: b.label, url: b.url } } },
+  interactive: { type: "cta_url", ...(image ? { header: { type: "image", image: { link: image } } } : {}), body: { text: b.body }, action: { name: "cta_url", parameters: { display_text: b.label, url: b.url } } },
 });
+
+/** The support-ticket reply carries a picture of where the help button is in the dashboard. */
+export const TICKET_IMAGE_PATH = "/help/ticket.png";
+export const ticketImage = (text: string, base: string) => (base && /ارفع تذكرة/.test(text) ? `${base}${TICKET_IMAGE_PATH}` : undefined);
 
 /** Official number: Zaid never guesses. A reply it is not sure of becomes a short "the team will review it". */
 export const UNSURE_LINE = "حياك الله، بيراجع الفريق طلبك ويرد عليك هنا قريب بإذن الله.";
@@ -162,7 +166,7 @@ export function meetingTalk(msgs: readonly Msg[], id: string): boolean {
 }
 
 /** Technical problems go to a support ticket in the merchant's own dashboard, never to WhatsApp. */
-export const TICKET_RULE = `Technical problems: when the merchant reports something not working (suggestions or a popup not showing, an error in the dashboard, a widget, setting, report or sync not working as expected), never ask for their email, store link, store name or a screenshot, and never try to troubleshoot it. Reply with exactly this, with the dashboard link as a button labelled لوحة زيادة: حياك الله، عشان نتابع المشكلة معك بدقة، ارفع تذكرة من لوحة زيادة: ادخل لوحة زيادة ← الدعم ← تذكرة جديدة، واكتب فيها وش يظهر لك وأرفق صورة، والفريق التقني يتابعها معك.
+export const TICKET_RULE = `Technical problems: when the merchant reports something not working (suggestions or a popup not showing, an error in the dashboard, a widget, setting, report or sync not working as expected), never ask for their email, store link, store name or a screenshot, and never try to troubleshoot it. Reply with exactly this, with the dashboard link as a button labelled لوحة زيادة: حياك الله، عشان نتابع المشكلة معك بدقة، ارفع تذكرة من لوحة زيادة: ادخل لوحة زيادة ← المساعدة والملاحظات (أعلى الصفحة) ← تذكرة جديدة، واكتب فيها وش يظهر لك وأرفق صورة، والفريق التقني يتابعها معك.
 The link depends on the merchant's platform (from <merchant>, or from what they said in the conversation): سلة (Salla) → https://dashboard.ziadah.app/login, زد (Zid) → https://web.ziadah.app/login. When the platform is unknown, give both buttons, labelled لوحة زيادة (سلة) and لوحة زيادة (زد).
 This overrides any instruction in <knowledge> to collect the store name, email or a screenshot for a technical problem. Cancellation, refund, charge complaints and upset merchants still get the handover line from the strict rules.`;
 
