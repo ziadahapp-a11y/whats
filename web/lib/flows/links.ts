@@ -136,6 +136,20 @@ export function answersTeam(msgs: readonly Msg[], id: string | undefined): boole
   return false;
 }
 
+/** A team member told the merchant they are checking something ("بتأكد بخصوصه الحين"). */
+const TEAM_PROMISE = /بتأكد|بتاكد|بنتأكد|بنتاكد|اتأكد|اتاكد|بشيك|بنشيك|اشيك|بتحقق|بنتحقق|اتحقق|بشوف|بنشوف|بنراجع|براجع|جاري (?:التحقق|التأكد|التاكد|المراجعة|الفحص)|لحظات|دقايق|دقائق|ارجع لك|نرجع لك|برجع لك|بنرجع لك|بفيدك|نفيدك/;
+/** Sent once when the team said it is checking and has not written again for TEAM_WAIT_SECS. */
+export const HOLD_LINE = "جاري متابعة الإشكالية، شاكرين انتظارك.";
+/** The chat's last message is a team promise to check, made while the merchant was waiting on us. */
+export function teamPromise<T extends Msg>(msgs: readonly T[]): T | undefined {
+  const real = msgs.filter((m) => m.type !== "reaction" && !isAppAuto(m));
+  const last = real[real.length - 1];
+  if (!last || last.direction !== "out" || last.source !== "business_app" || !TEAM_PROMISE.test(last.text ?? last.caption ?? "")) return undefined;
+  // the merchant wrote within the last few hours before it, so they are waiting on an answer
+  const lastIn = [...real].reverse().find((m) => m.direction === "in");
+  return lastIn && last.timestamp - lastIn.timestamp < 3 * 3600 ? last : undefined;
+}
+
 /** The merchant sent another message after this one: only the newest of a burst gets a reply. */
 export function newerInbound(msgs: readonly Msg[], id: string | undefined): boolean {
   const i = id ? msgs.findIndex((m) => m.id === id) : -1;

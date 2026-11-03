@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, answersTeam, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -841,6 +841,22 @@ export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: {
     if (done >= max || (d.deadline && Date.now() > d.deadline)) break;
     // the Business app's away message is not an answer: look past it
     const m = c.last && isAppAuto(c.last) ? (await d.store.messages(c.waId, 6)).filter((k) => !isAppAuto(k)).pop() : c.last;
+    // the team said it is checking something and went quiet: one holding line so the merchant is not left hanging
+    if (d.channel.kind === "official" && m?.direction === "out" && !c.waId.endsWith("@g.us")) {
+      const p = teamPromise(await d.store.messages(c.waId, 12));
+      const age = p ? nowS - p.timestamp : 0;
+      if (p && age >= TEAM_WAIT_SECS && age < 3 * 3600 && c.windowClosesAt && c.windowClosesAt - nowS > 600 && (await d.state.set(`flow:hold:${p.id}`, "1", { ex: 7 * 86400, nx: true }))) {
+        done++;
+        const x = makeCtx(flows[0], d, now, p, await d.store.getName(c.waId), []);
+        try {
+          const id = await d.channel.sendText(c.waId, HOLD_LINE);
+          logs.push({ ...logBase(flows[0], x, d), note: `holding line after the team said it is checking${id ? ` (${id})` : ""}` });
+        } catch (e) {
+          logs.push({ ...logBase(flows[0], x, d), status: "error", note: e instanceof Error ? e.message : String(e) });
+        }
+      }
+      continue;
+    }
     if (!m || m.direction !== "in" || m.type === "reaction" || c.waId.endsWith("@g.us")) continue;
     const waiting = !!(await d.state.get(`flow:wait:${m.id}`));
     if (nowS - m.timestamp < (waiting ? TEAM_WAIT_SECS : minAgeMinutes * 60) || !c.windowClosesAt || c.windowClosesAt - nowS < 1800) continue;

@@ -1271,3 +1271,23 @@ test("a [[MOVE]] marker moves the merchant's Zaid-booked meeting to a free time;
   assert.ok((await m.apply("[[MOVE 2026-10-29T11:30]]", "966545432944", "أبو صلاح (متجر البركة )")).endsWith(HANDOFF));
   assert.equal(moved.length, 1);
 });
+
+test("the team said it is checking and went quiet for 15 minutes: Zaid sends one holding line", async () => {
+  const { catchUpUnanswered } = await import("./flows/engine");
+  const { HOLD_LINE, teamPromise } = await import("./flows/links");
+  const ai: AiClient = async () => "لا يجب أن يرد";
+  const s = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSecs: 0 } as never)], { ai });
+  s.deps.channel = { ...s.deps.channel, kind: "official" };
+  const t = Math.floor(NOW / 1000);
+  await s.store.saveMessage(msg({ id: "p1", text: "الكود العشوائي انا استغربته مايظهر", timestamp: t - 60 }));
+  await s.store.saveMessage({ id: "p2", waId: CHAT, direction: "out", type: "text", text: "بتاكد بخصوصه الحين", timestamp: t - 50, source: "business_app" });
+  assert.equal((await catchUpUnanswered(s.deps, NOW + 10 * 60_000)).length, 0); // still inside the 15 minutes
+  await catchUpUnanswered(s.deps, NOW + 16 * 60_000);
+  await catchUpUnanswered(s.deps, NOW + 20 * 60_000);
+  assert.deepEqual(s.sent.map((x) => x.text), [HOLD_LINE]);
+  // a plain team answer, or a promise made with no merchant waiting, gets nothing
+  const m = (id: string, direction: "in" | "out", timestamp: number, text: string, source?: "business_app" | "api") => ({ id, direction, type: "text", text, timestamp, source });
+  assert.equal(teamPromise([m("a", "in", 0, "وش الأسعار"), m("b", "out", 10, "الباقات في الرابط", "business_app")]), undefined);
+  assert.equal(teamPromise([m("a", "in", 0, "شكرا"), m("b", "out", 5 * 3600, "بتاكد وارجع لك", "business_app")]), undefined);
+  assert.ok(teamPromise([m("a", "in", 0, "ما يظهر"), m("b", "out", 10, "لحظات اشيك عليه", "business_app")]));
+});
