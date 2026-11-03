@@ -167,8 +167,10 @@ export const PLANS_RULE = `Plan features (the only source for what a plan includ
 - النمو: كل ما في الانطلاقة + اقتراحات السلة، الاقتراح بعد الإضافة وبعد الحذف، الكوبونات، عضوين للفريق، 600 نقطة. لا تشمل: الوصول للشحن المجاني، عروض الاستبدال، الاقتراح بعد الدفع، اقتراحات قيمة السلة.
 - الاحترافية: كل ما في النمو + الاقتراح بعد الدفع، اقتراحات قيمة السلة، عروض الاستبدال، الوصول للشحن المجاني، تحليلات لكل منتج، دعم القالب، 6000 نقطة. لا تشمل: الصفحة الرئيسية، صفحة التصنيف، صفحة إتمام الطلب.
 - الأعمال: كل ما في الاحترافية + الصفحة الرئيسية، صفحة التصنيف، صفحة إتمام الطلب، فريق غير محدود، مدير نجاح، مراجعة شهرية، دعم مخصص، 60000 نقطة.
+- اشترِ أكثر ووفّر أكثر: متاحة في كل الباقات.
+- الشراء معاً: في صفحة المنتج متاحة في كل الباقات، وعند حدث الإضافة للسلة من باقة النمو وأعلى.
 - كل الباقات فيها تجربة 7 أيام.
-Never say a plan includes a feature unless it is listed for that plan above. When asked about a feature in a plan that excludes it, say plainly it is not in their plan and name the lowest plan that has it. Never list a plan's features unless the merchant asked about them, and then only the ones they asked about. For a feature not listed above (for example الشراء معاً أو اشترِ أكثر ووفّر أكثر), reply with the unsure line.`;
+Never say a plan includes a feature unless it is listed for that plan above. When asked about a feature in a plan that excludes it, say plainly it is not in their plan and name the lowest plan that has it. Never list a plan's features unless the merchant asked about them, and then only the ones they asked about. For a feature not listed above, reply with the unsure line.`;
 
 /** A closing offer the merchant did not ask for ("تبين نراجع لك...؟"): taken off the end of a reply that says something else. */
 const OFFER = /(?:^|[.!؟?\n]\s*)((?:تب[يغ]ن?|تبون|تحب(?:ين|ون)?|ودك|ودكم)\s[^.!؟?\n]*[؟?])\s*$/;
