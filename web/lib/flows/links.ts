@@ -124,6 +124,18 @@ export function teamRepliedAt(msgs: readonly Msg[]): number | undefined {
 /** A team message after Zaid's answer counts as the team stepping in only this soon after the merchant wrote; later it is a reminder or campaign. */
 export const TEAM_JOIN_SECS = 2 * 3600;
 
+/** The merchant is answering the team: the last message from our side before this one was a team member's from the app. */
+export function answersTeam(msgs: readonly Msg[], id: string | undefined): boolean {
+  const i = id ? msgs.findIndex((m) => m.id === id) : -1;
+  if (i < 0) return false;
+  for (let j = i - 1; j >= 0; j--) {
+    const m = msgs[j];
+    if (m.direction !== "out" || m.type === "reaction" || isAppAuto(m)) continue;
+    return m.source === "business_app";
+  }
+  return false;
+}
+
 /** The merchant sent another message after this one: only the newest of a burst gets a reply. */
 export function newerInbound(msgs: readonly Msg[], id: string | undefined): boolean {
   const i = id ? msgs.findIndex((m) => m.id === id) : -1;
@@ -182,13 +194,17 @@ Not a technical problem, so never send the ticket reply for it: a how-to questio
 This overrides any instruction in <knowledge> to collect the store name, email or a screenshot for a technical problem. Cancellation, refund, charge complaints and upset merchants still get the handover line from the strict rules.`;
 
 /** What each plan includes, from ziadah.app/pricing. Zaid may only name a feature for a plan when it is listed here. */
-export const PLANS_RULE = `Plan features (the only source for what a plan includes, it overrides anything else):
+export const PLANS_RULE = `Plan features (the only source for what a plan includes; it overrides the pricing page and <knowledge>):
 - الانطلاقة: اقتراحات صفحة المنتج، عروض المنتجات، عروض الكميات، التحليلات، 60 نقطة ذكاء اصطناعي. لا تشمل: الكوبونات، الوصول للشحن المجاني.
 - النمو: كل ما في الانطلاقة + اقتراحات السلة، الاقتراح بعد الإضافة وبعد الحذف، الكوبونات، عضوين للفريق، 600 نقطة. لا تشمل: الوصول للشحن المجاني، عروض الاستبدال، الاقتراح بعد الدفع، اقتراحات قيمة السلة.
 - الاحترافية: كل ما في النمو + الاقتراح بعد الدفع، اقتراحات قيمة السلة، عروض الاستبدال، الوصول للشحن المجاني، تحليلات لكل منتج، دعم القالب، 6000 نقطة. لا تشمل: الصفحة الرئيسية، صفحة التصنيف، صفحة إتمام الطلب.
 - الأعمال: كل ما في الاحترافية + الصفحة الرئيسية، صفحة التصنيف، صفحة إتمام الطلب، فريق غير محدود، مدير نجاح، مراجعة شهرية، دعم مخصص، 60000 نقطة.
 - اشترِ أكثر ووفّر أكثر: متاحة في كل الباقات.
 - الشراء معاً: في صفحة المنتج متاحة في كل الباقات، وعند حدث الإضافة للسلة من باقة النمو وأعلى.
+- توصيات الذكاء الاصطناعي (AI Upsell): متاحة حالياً في كل الباقات بدون حد، لفترة محدودة.
+- كوّن مجموعتك (Build Your Bundle) وأضف المزيد (Add More): من باقة النمو وأعلى. أضف المزيد غير اشترِ أكثر ووفّر أكثر.
+- كوبونات بعد الشراء (Post-purchase Coupons): من الباقة الاحترافية وأعلى.
+- رفع قيمة السلة (Cart Goal) هي اقتراحات قيمة السلة: من الباقة الاحترافية وأعلى.
 - كل الباقات فيها تجربة 7 أيام.
 Never say a plan includes a feature unless it is listed for that plan above. When asked about a feature in a plan that excludes it, say plainly it is not in their plan and name the lowest plan that has it. Never list a plan's features unless the merchant asked about them, and then only the ones they asked about. For a feature not listed above, reply with the unsure line.`;
 

@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, answersTeam, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -279,6 +279,8 @@ async function teamHold(d: EngineDeps, x: Ctx): Promise<"answer" | "wait" | "ski
   // Zaid holds the calendar, so a merchant arranging a meeting gets the free times now
   if (d.meetings && meetingTalk(recent, m.id)) return "answer";
   const replied = teamRepliedAt(recent), wrote = lastTeamAt(recent);
+  // a merchant answering a team member's own message (an outreach, a question, a campaign) waits for that team member first
+  if (answersTeam(recent, m.id)) return "wait";
   return (replied && nowS - replied < TEAM_OWNS_SECS) || (wrote && nowS - wrote < TEAM_WAIT_SECS) ? "wait" : "answer";
 }
 

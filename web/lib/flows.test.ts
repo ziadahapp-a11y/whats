@@ -1111,11 +1111,25 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     await catchUpUnanswered(deps, NOW + 16 * 60_000);
     assert.equal(sent.length, 0);
   }
-  // a reply to a broadcast sent hours ago is answered right away
+  // a reply to the team's own outreach or campaign waits 15 minutes for the team, then Zaid answers
+  {
+    const { catchUpUnanswered } = await import("./flows/engine");
+    const { deps, store, sent } = official(["رد زيد"]);
+    await store.saveMessage({ id: "bc", waId: CHAT, direction: "out", type: "text", text: "ممكن توصلني بالمسؤول عن التطبيقات؟", timestamp: t - 3 * 3600, source: "business_app" });
+    const m = msg({ id: "b2", text: "تفضل ياغالي كيف أقدر اخدمك", timestamp: t - 30 });
+    await store.saveMessage(m);
+    await runFlows(deps, [m], NOW);
+    assert.equal(sent.length, 0);
+    await catchUpUnanswered(deps, NOW + 15 * 60_000);
+    assert.equal(sent.length, 1);
+  }
+  // after Zaid answered, a new merchant message is Zaid's again even with an old team message further up
   {
     const { deps, store, sent } = official(["رد زيد"]);
-    await store.saveMessage({ id: "bc", waId: CHAT, direction: "out", type: "text", text: "اشتراكك ينتهي", timestamp: t - 3 * 3600, source: "business_app" });
-    const m = msg({ id: "b2", timestamp: t - 30 });
+    await store.saveMessage({ id: "o1", waId: CHAT, direction: "out", type: "text", text: "تذكير بالعرض", timestamp: t - 30 * 3600, source: "business_app" });
+    await store.saveMessage({ id: "o2", waId: CHAT, direction: "in", type: "text", text: "شكرا", timestamp: t - 29 * 3600 });
+    await store.saveMessage({ id: "o3", waId: CHAT, direction: "out", type: "text", text: "العفو", timestamp: t - 29 * 3600 + 60, source: "api" });
+    const m = msg({ id: "o4", text: "هل الباقة فيها كوبونات؟", timestamp: t - 30 });
     await store.saveMessage(m);
     await runFlows(deps, [m], NOW);
     assert.equal(sent.length, 1);
