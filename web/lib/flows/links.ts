@@ -102,17 +102,27 @@ type Msg = { id: string; direction: "in" | "out"; type: string; text?: string; c
 
 /**
  * When a team member last answered the merchant from the app (unix seconds): a Business-app message
- * sent within a day after a merchant message. A broadcast that opens a chat, and the app's away message, do not count.
+ * sent within a day after a merchant message. A broadcast that opens a chat, a reminder sent hours after Zaid already
+ * answered, and the app's away message do not count.
  */
 export function teamRepliedAt(msgs: readonly Msg[]): number | undefined {
-  let lastIn: number | undefined, at: number | undefined;
+  let lastIn: number | undefined, at: number | undefined, prev: "in" | "team" | "other" = "other";
   for (const m of msgs) {
-    if (m.type === "reaction") continue;
-    if (m.direction === "in") lastIn = m.timestamp;
-    else if (m.source === "business_app" && lastIn !== undefined && m.timestamp - lastIn < TEAM_OWNS_SECS && !isAppAuto(m)) at = m.timestamp;
+    if (m.type === "reaction" || isAppAuto(m)) continue;
+    if (m.direction === "in") {
+      lastIn = m.timestamp;
+      prev = "in";
+    } else if (m.source === "business_app" && lastIn !== undefined && m.timestamp - lastIn < TEAM_OWNS_SECS && (prev !== "other" || m.timestamp - lastIn < TEAM_JOIN_SECS)) {
+      // answering the merchant, continuing their own replies, or stepping in soon after Zaid answered
+      at = m.timestamp;
+      prev = "team";
+    } else prev = "other";
   }
   return at;
 }
+
+/** A team message after Zaid's answer counts as the team stepping in only this soon after the merchant wrote; later it is a reminder or campaign. */
+export const TEAM_JOIN_SECS = 2 * 3600;
 
 /** The merchant sent another message after this one: only the newest of a burst gets a reply. */
 export function newerInbound(msgs: readonly Msg[], id: string | undefined): boolean {

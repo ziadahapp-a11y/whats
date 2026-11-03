@@ -1048,6 +1048,11 @@ test("team ownership: a team answer holds the chat for a day; broadcasts and the
   assert.equal(teamRepliedAt([m("q", "in", 100), m("a", "out", 120, "حياك الله، كيف اساعدك اليوم؟", "business_app")]), undefined);
   assert.equal(teamRepliedAt([m("q", "in", 100), m("z", "out", 110, "رد زيد", "api")]), undefined);
   assert.equal(teamRepliedAt([m("q", "in", 100), m("b", "out", 100 + 2 * 86400, "حملة", "business_app")]), undefined);
+  // a reminder campaign the next morning, after Zaid already answered, is not the team taking the chat
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("z", "out", 110, "تم حجز موعدنا", "api"), m("r", "out", 100 + 19 * 3600, "تذكير باقي يوم على العرض", "business_app")]), undefined);
+  // ... but stepping in a few minutes after Zaid's answer is
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("z", "out", 110, "رد زيد", "api"), m("t", "out", 460, "لو حابين جدولة اجتماع", "business_app")]), 460);
+  assert.equal(teamRepliedAt([m("q", "in", 100), m("t", "out", 160, "أبشر", "business_app"), m("t2", "out", 100 + 5 * 3600, "تم", "business_app")]), 100 + 5 * 3600);
   const burst = [m("a", "in", 100), m("b", "in", 100), m("z", "out", 101, "رد", "api")];
   assert.equal(newerInbound(burst, "a"), true);
   assert.equal(newerInbound(burst, "b"), false);
