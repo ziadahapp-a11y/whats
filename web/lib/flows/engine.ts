@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, CLOSING_RULE, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, newerInbound, STRICT_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, CLOSING_RULE, DIRECT_RULE, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, newerInbound, STRICT_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -290,7 +290,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
-    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}`;
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}\n\n${DIRECT_RULE}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
     if (cal) system += `\n\n${cal}`;
   }
@@ -625,6 +625,9 @@ function logBase(flow: Flow, x: Ctx, d: EngineDeps): LogEntry {
 }
 
 async function guards(flow: Flow, x: Ctx, d: EngineDeps, cooldown = true): Promise<string | null> {
+  // Zaid on the official number answers once per burst on its own (ai_reply checks newer and answered
+  // messages), so a per-chat cooldown would only drop a merchant's follow-up question for good.
+  if (d.channel.kind === "official" && hasAiReply(flow)) cooldown = false;
   if (cooldown && flow.cooldownSeconds && x.chat && (await d.state.get(`flow:cd:${flow.id}:${x.chat}`))) return `cooldown (${flow.cooldownSeconds}s per chat)`;
   if (flow.mode !== "dry" && !(await bump(d.state, `flow:cap:${flow.id}:${Math.floor(x.now / HOUR)}`, 7200, flow.maxPerHour))) return `hourly limit reached (${flow.maxPerHour})`;
   return null;

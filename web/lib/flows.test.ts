@@ -1115,3 +1115,21 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     assert.ok(sent[0].text === UNSURE_LINE || sent[0].text.includes("ساعات العمل"));
   }
 });
+
+test("official Zaid ignores the per-chat cooldown, so a follow-up question is still answered", async () => {
+  const { DIRECT_RULE } = await import("./flows/links");
+  const systems: string[] = [];
+  const ai: AiClient = async (r) => (systems.push(r.system), "رد");
+  const { deps, store, sent } = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSeconds: 600 })], { ai });
+  deps.channel = { ...deps.channel, kind: "official" };
+  const t = Math.floor(NOW / 1000);
+  const a = msg({ id: "g1", text: "السلام عليكم", timestamp: t - 60 });
+  await store.saveMessage(a);
+  await runFlows(deps, [a], NOW - 50_000);
+  await store.saveMessage({ id: "z1", waId: CHAT, direction: "out", type: "text", text: "حياك الله", timestamp: t - 50, source: "api" });
+  const b = msg({ id: "g2", text: "بكم السنة؟", timestamp: t - 30 });
+  await store.saveMessage(b);
+  await runFlows(deps, [b], NOW);
+  assert.equal(sent.length, 2);
+  assert.ok(systems[1].includes(DIRECT_RULE));
+});
