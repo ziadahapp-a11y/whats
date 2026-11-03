@@ -1221,6 +1221,8 @@ test("meeting talk: Zaid answers a merchant arranging a time at once, even while
   assert.equal(meetingTalk(chat, "i1"), true);
   assert.equal(meetingTalk(chat, "i3"), true);
   assert.equal(meetingTalk(chat, "i4"), false); // thanks after the team set it stays with the team
+  // the email the team asked for to book the meeting is meeting talk too
+  assert.equal(meetingTalk([m("t0", "out", -2000, "لو تحب تدخل اجتماع 10 دقايق", "business_app"), m("t", "out", 0, "اكيد ابشر ممكن ايميلك نجدول الوقت", "business_app"), m("e", "in", 300, "abdulazizrashidalghanim@gmail.com")], "e"), true);
   assert.equal(meetingTalk([m("x", "out", 0, "أبشر", "business_app"), m("y", "in", 10, "كم سعر النمو؟")], "y"), false);
   assert.equal(meetingTalk([m("x", "out", 0, "متى يناسبك الاجتماع؟", "business_app"), m("y", "in", 9000, "بكره")], "y"), false); // over two hours
 
@@ -1290,4 +1292,7 @@ test("the team said it is checking and went quiet for 15 minutes: Zaid sends one
   assert.equal(teamPromise([m("a", "in", 0, "وش الأسعار"), m("b", "out", 10, "الباقات في الرابط", "business_app")]), undefined);
   assert.equal(teamPromise([m("a", "in", 0, "شكرا"), m("b", "out", 5 * 3600, "بتاكد وارجع لك", "business_app")]), undefined);
   assert.ok(teamPromise([m("a", "in", 0, "ما يظهر"), m("b", "out", 10, "لحظات اشيك عليه", "business_app")]));
+  // small talk and meeting invites are not a promise to check a problem
+  assert.equal(teamPromise([m("a", "in", 0, "اسفة جداً ماقدرت اتابع"), m("b", "out", 60, "ولايهمك انا معاك بتأكد ان امورك كلها تمام قبل لا اطلع", "business_app")]), undefined);
+  assert.equal(teamPromise([m("a", "in", 0, "audio"), m("b", "out", 60, "لو تحب تدخل اجتماع 10 دقايق نستعرض الخصائص", "business_app")]), undefined);
 });

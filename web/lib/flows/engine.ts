@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, MEETING_OWN_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -301,6 +301,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (who) system += `\n\n${who}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
     if (cal) system += `\n\n${cal}`;
+    if (cal && x.msg && meetingTalk(await d.store.messages(x.chat, 40), x.msg.id)) system += `\n\n${MEETING_OWN_RULE}`;
   }
   const task = a.type === "ai_reply" ? "Write my next reply to the last message from the other person." : "Do what the instructions above ask, using the conversation(s).";
   const out = await d.ai({ system, user: `<conversation>\n${transcript}\n</conversation>\n\n${task}`, maxTokens: a.maxTokens, model: a.model, provider: a.provider });

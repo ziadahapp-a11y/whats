@@ -137,17 +137,21 @@ export function answersTeam(msgs: readonly Msg[], id: string | undefined): boole
 }
 
 /** A team member told the merchant they are checking something ("بتأكد بخصوصه الحين"). */
-const TEAM_PROMISE = /بتأكد|بتاكد|بنتأكد|بنتاكد|اتأكد|اتاكد|بشيك|بنشيك|اشيك|بتحقق|بنتحقق|اتحقق|بشوف|بنشوف|بنراجع|براجع|جاري (?:التحقق|التأكد|التاكد|المراجعة|الفحص)|لحظات|دقايق|دقائق|ارجع لك|نرجع لك|برجع لك|بنرجع لك|بفيدك|نفيدك/;
-/** Sent once when the team said it is checking and has not written again for TEAM_WAIT_SECS. */
+const TEAM_PROMISE = /بتأكد|بتاكد|بنتأكد|بنتاكد|بشيك|بنشيك|اشيك عليه|بتحقق|بنتحقق|بنراجع|براجع|جاري (?:التحقق|التأكد|التاكد|المراجعة|الفحص|المتابعة)|ارجع لك|نرجع لك|برجع لك|بنرجع لك|بفيدك|نفيدك/;
+/** The merchant reported something not working. */
+const PROBLEM = /ما ?[يت]?ظهر|ما ?[يتا]?شتغل|مو شغال|مب شغال|مهو شغال|ماهو شغال|مشكل|خطأ|خطا|غلط|عطل|خربان|خربت|خرب|توقف|ما ?[يت]?طلع|ما ?[يت]?نفع|ما ?[يت]?زبط|ما ?[يت]?ضبط|ما ?[يت]?فتح|ما ?[يت]?وصل|ليش ما|error|bug|not working|doesn'?t work/i;
+/** Sent once when the team said it is checking a problem and has not written again for TEAM_WAIT_SECS. */
 export const HOLD_LINE = "جاري متابعة الإشكالية، شاكرين انتظارك.";
-/** The chat's last message is a team promise to check, made while the merchant was waiting on us. */
+/**
+ * The chat's last message is a team promise to check something, made right after the merchant reported a problem
+ * (within two hours, in one of their last three messages). Small talk ("بتأكد ان امورك تمام") does not count.
+ */
 export function teamPromise<T extends Msg>(msgs: readonly T[]): T | undefined {
   const real = msgs.filter((m) => m.type !== "reaction" && !isAppAuto(m));
   const last = real[real.length - 1];
   if (!last || last.direction !== "out" || last.source !== "business_app" || !TEAM_PROMISE.test(last.text ?? last.caption ?? "")) return undefined;
-  // the merchant wrote within the last few hours before it, so they are waiting on an answer
-  const lastIn = [...real].reverse().find((m) => m.direction === "in");
-  return lastIn && last.timestamp - lastIn.timestamp < 3 * 3600 ? last : undefined;
+  const ins = real.filter((m) => m.direction === "in" && last.timestamp - m.timestamp < 2 * 3600).slice(-3);
+  return ins.some((m) => PROBLEM.test(m.text ?? m.caption ?? "")) ? last : undefined;
 }
 
 /** The merchant sent another message after this one: only the newest of a burst gets a reply. */
@@ -182,7 +186,7 @@ export const STRICT_RULE = `Strict rules for every reply:
 export const DIRECT_RULE = `Nobody from the team is answering this message: you are. Never output [[SKIP]] for a real question or request. When the answer is in <knowledge> or in the conversation (our own earlier messages count, for example a price or offer we already sent), answer it directly in one or two short sentences. Only when the answer is in neither, reply with the unsure line from the rules above so the team takes it.`;
 
 /** Words that mark a chat as setting up or changing a meeting time. */
-const MEETING_TALK = /اجتماع|إجتماع|ميتنق|ميتنج|موعد|مواعيد|جدولة|جدول[هة]|الساع[هة]|وقت صلا|meeting|zoom|\bmeet\b|\bcall\b/i;
+const MEETING_TALK = /اجتماع|إجتماع|ميتنق|ميتنج|موعد|مواعيد|جدول|الساع[هة]|وقت صلا|meeting|zoom|\bmeet\b|\bcall\b/i;
 
 const TIME_WORDS = /[0-9٠-٩]|متاح|مناسب|يناسب|وقت|اليوم|بكر[هة]|بكرا|غد[اًا]?|الصبح|الظهر|العصر|المغرب|العشاء|مساء|صباح|الأحد|الاحد|الاثنين|الإثنين|الثلاثاء|الأربعاء|الاربعاء|الخميس|السبت|الجمعة|ألغي|الغي|أأجل|اأجل|أجل|تأجيل|تغيير|اغير|أغير/;
 const bodyText = (m: Msg) => m.text ?? m.caption ?? "";
@@ -197,7 +201,8 @@ export function meetingTalk(msgs: readonly Msg[], id: string): boolean {
   if (i < 0) return false;
   const at = msgs[i].timestamp;
   // the merchant's own words must be about a time, so a "تمام شكرا" after the team set the meeting stays with the team
-  if (!(MEETING_TALK.test(bodyText(msgs[i])) || TIME_WORDS.test(bodyText(msgs[i])))) return false;
+  const own = bodyText(msgs[i]);
+  if (!(MEETING_TALK.test(own) || TIME_WORDS.test(own) || /[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(own))) return false;
   return msgs.slice(Math.max(0, i - 6), i + 1).some((m) => at - m.timestamp <= 7200 && !isAppAuto(m) && MEETING_TALK.test(bodyText(m)));
 }
 
@@ -206,6 +211,9 @@ export const TICKET_RULE = `Technical problems: only when the merchant clearly s
 The link depends on the merchant's platform (from <merchant>, or from what they said in the conversation): سلة (Salla) → https://dashboard.ziadah.app/login, زد (Zid) → https://web.ziadah.app/login. When the platform is unknown, give both buttons, labelled لوحة زيادة (سلة) and لوحة زيادة (زد).
 Not a technical problem, so never send the ticket reply for it: a how-to question (كيف أتأكد، كيف أفعّل، وين ألقى، وش معنى), a question about numbers going up or down, or a general question. Answer those from <knowledge>, or with the unsure line when the answer is not there. When you cannot tell whether something is broken, answer the question as asked.
 This overrides any instruction in <knowledge> to collect the store name, email or a screenshot for a technical problem. Cancellation, refund, charge complaints and upset merchants still get the handover line from the strict rules.`;
+
+/** Added when the merchant is arranging a meeting: Zaid holds the calendar, so he finishes it even if a team member started it. */
+export const MEETING_OWN_RULE = `The merchant is arranging a meeting right now, possibly with a team member who started it. You hold the calendar, so you finish it: never output [[SKIP]] here. Follow the Meetings instructions exactly: if no time is agreed yet, offer the free times closest to what they asked for (for example tomorrow afternoon); if they chose a listed time and an email is in the conversation, book it; if the email is missing, ask for it. Do not repeat what the team already asked.`;
 
 /** What each plan includes, from ziadah.app/pricing. Zaid may only name a feature for a plan when it is listed here. */
 export const PLANS_RULE = `Plan features (the only source for what a plan includes; it overrides the pricing page and <knowledge>):
