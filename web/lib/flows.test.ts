@@ -1117,7 +1117,7 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
 });
 
 test("official Zaid ignores the per-chat cooldown, so a follow-up question is still answered", async () => {
-  const { DIRECT_RULE, PLANS_RULE } = await import("./flows/links");
+  const { DIRECT_RULE, PLANS_RULE, TICKET_RULE } = await import("./flows/links");
   const systems: string[] = [];
   const ai: AiClient = async (r) => (systems.push(r.system), "رد");
   const { deps, store, sent } = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSeconds: 600 })], { ai });
@@ -1133,6 +1133,8 @@ test("official Zaid ignores the per-chat cooldown, so a follow-up question is st
   assert.equal(sent.length, 2);
   assert.ok(systems[1].includes(DIRECT_RULE));
   assert.ok(systems[1].includes(PLANS_RULE));
+  assert.ok(systems[1].includes(TICKET_RULE));
+  assert.match(TICKET_RULE, /سلة \(Salla\) → https:\/\/dashboard\.ziadah\.app\/login, زد \(Zid\) → https:\/\/web\.ziadah\.app\/login/);
   // Growth must never be described as having free-shipping reach.
   const growth = PLANS_RULE.split("\n").find((l) => l.startsWith("- النمو"))!;
   assert.ok(growth.split("لا تشمل")[1].includes("الوصول للشحن المجاني"));
