@@ -1159,3 +1159,12 @@ test("merchant lookup: the sheet row for this phone becomes a <merchant> block f
   assert.equal((await findMerchant(kv, "966500000000", {}, fetchImpl)).length, 0);
   assert.equal(calls, 1);
 });
+
+test("an unasked offer at the end of Zaid's reply is dropped", async () => {
+  const { dropOffer } = await import("./flows/links");
+  assert.equal(dropOffer("حياك الله، الذكاء الاصطناعي متاح في باقتك النمو السنوية. تبين نراجع لك وش المتاح في باقتك بالضبط؟"), "حياك الله، الذكاء الاصطناعي متاح في باقتك النمو السنوية.");
+  assert.equal(dropOffer("حياك الله، الأرقام موجودة في اللوحة. تحب أوضح لك طريقة تفعيل التجديد؟"), "حياك الله، الأرقام موجودة في اللوحة.");
+  assert.equal(dropOffer("تبي تفعّله الآن؟"), "تبي تفعّله الآن؟"); // nothing else to keep
+  assert.equal(dropOffer("متى يناسبك الاجتماع؟"), "متى يناسبك الاجتماع؟");
+  assert.equal(dropOffer("حياك الله، العفو، حاضرين لأي استفسار."), "حياك الله، العفو، حاضرين لأي استفسار.");
+});

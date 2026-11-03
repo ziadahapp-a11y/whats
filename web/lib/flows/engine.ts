@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, CLOSING_RULE, DIRECT_RULE, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, newerInbound, STRICT_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, newerInbound, STRICT_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -500,7 +500,7 @@ async function runActions(flow: Flow, x: Ctx, d: EngineDeps, mode: Flow["mode"],
             if (again !== "answer") out = SKIP;
           }
           if (!out.includes(SKIP) && d.meetings && mode === "auto") out = await d.meetings.apply(out, x.chat, x.chatName);
-          if (!out.includes(SKIP) && d.channel.kind === "official") out = withHours(out, x.now);
+          if (!out.includes(SKIP) && d.channel.kind === "official") out = withHours(dropOffer(out), x.now);
           x.vars.ai = out === SKIP ? "" : out;
           output = x.vars.ai;
           detail = hold === "wait" ? "waiting 15 minutes for the team" : out.includes(SKIP) ? "Claude chose not to reply" : await deliver(x.chat, out, a.quote ? x.msg?.id : undefined);

@@ -140,3 +140,12 @@ export const STRICT_RULE = `Strict rules for every reply:
 
 /** Zaid only runs when the team is not answering (or let 15 minutes pass), so a real question always gets an answer. */
 export const DIRECT_RULE = `Nobody from the team is answering this message: you are. Never output [[SKIP]] for a real question or request. When the answer is in <knowledge> or in the conversation (our own earlier messages count, for example a price or offer we already sent), answer it directly in one or two short sentences. Only when the answer is in neither, reply with the unsure line from the rules above so the team takes it.`;
+
+/** A closing offer the merchant did not ask for ("تبين نراجع لك...؟"): taken off the end of a reply that says something else. */
+const OFFER = /(?:^|[.!؟?\n]\s*)((?:تب[يغ]ن?|تبون|تحب(?:ين|ون)?|ودك|ودكم)\s[^.!؟?\n]*[؟?])\s*$/;
+export function dropOffer(text: string): string {
+  const m = OFFER.exec(text);
+  if (!m || /\]\(https?:/.test(m[1])) return text;
+  const head = text.slice(0, m.index + m[0].length - m[1].length).trimEnd();
+  return head.replace(/[\s،,]+$/, "").length >= 10 ? head : text;
+}
