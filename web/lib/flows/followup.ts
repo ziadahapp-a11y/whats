@@ -1,5 +1,6 @@
 // One follow-up on the official number when a merchant has gone quiet: our side wrote last and the
-// merchant's last message is 20 hours old, so the reminder still lands inside the 24-hour window.
+// merchant's last message is 20 hours old. Only after Zaid's own message: when a team member wrote last,
+// the team ended the exchange and decides what comes next, so the reminder still lands inside the 24-hour window.
 
 import type { RawKV } from "../wa/auth";
 import type { Store } from "../store";
@@ -17,7 +18,7 @@ export async function sendFollowups(d: { store: Store; state: RawKV; channel: Ch
   const convs = await d.store.conversations(scan, undefined, now);
   const due = convs.filter((c) => {
     const age = c.lastInboundAt ? now - c.lastInboundAt : -1;
-    return age >= FOLLOWUP_AFTER && age < LATEST && c.last?.direction === "out" && !CLOSED.test(c.last.text ?? "");
+    return age >= FOLLOWUP_AFTER && age < LATEST && c.last?.direction === "out" && c.last.source !== "business_app" && !CLOSED.test(c.last.text ?? "");
   });
   if (!due.length) return [];
   const out = await d.store.optedOut(due.map((c) => c.waId));

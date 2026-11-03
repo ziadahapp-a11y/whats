@@ -808,6 +808,8 @@ test("one follow-up when the merchant has been quiet for 20 hours and we wrote l
   await conv("966500000003", 23.8, "متى يناسبك؟"); // window about to close
   await conv("966500000004", 21); // merchant wrote last
   await conv("966500000005", 21, "تمام\n\nجاري تحويلك للفريق المختص"); // handed off
+  await store.saveMessage({ id: "t6-in", waId: "966500000006", direction: "in", type: "text", text: "تمام", timestamp: now - 21 * 3600 });
+  await store.saveMessage({ id: "t6-out", waId: "966500000006", direction: "out", type: "text", text: "ان شاء الله ابشر", timestamp: now - 21 * 3600 + 60, source: "business_app" }); // the team wrote last
   const d = { store, state, channel };
   assert.deepEqual(await sendFollowups(d, now), ["966500000001"]);
   assert.deepEqual(sent, [`966500000001:${FOLLOWUP_TEXT}`]);
