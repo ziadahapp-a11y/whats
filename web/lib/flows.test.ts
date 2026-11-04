@@ -1060,6 +1060,7 @@ test("team ownership: a team answer holds the chat for a day; broadcasts and the
 });
 
 test("official Zaid: one reply per burst, waits 15 minutes in a chat the team answered, and never sends foreign letters", async () => {
+  const HOURS = NOW + 18 * 3600_000; // Tuesday 11:13 Riyadh, inside team hours
   const { UNSURE_LINE, STRICT_RULE } = await import("./flows/links");
   const official = (reply: string[]) => {
     const systems: string[] = [];
@@ -1068,7 +1069,7 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     s.deps.channel = { ...s.deps.channel, kind: "official" };
     return { ...s, systems };
   };
-  const t = Math.floor(NOW / 1000);
+  const t = Math.floor(HOURS / 1000);
 
   // two messages in the same second: only the newer one is answered
   {
@@ -1076,7 +1077,7 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     const a = msg({ id: "a1", text: "بالتدقيق", timestamp: t - 30 }), b = msg({ id: "b1", text: "ممكن الأرقام", timestamp: t - 30 });
     await store.saveMessage(a);
     await store.saveMessage(b);
-    await runFlows(deps, [a, b], NOW);
+    await runFlows(deps, [a, b], HOURS);
     assert.equal(sent.length, 1);
     assert.equal(systems.length, 1);
     assert.ok(systems[0].includes(STRICT_RULE));
@@ -1089,13 +1090,13 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     await store.saveMessage({ id: "t0", waId: CHAT, direction: "out", type: "text", text: "الالغاء من زد", timestamp: t - 31 * 60, source: "business_app" });
     const m = msg({ id: "q1", timestamp: t - 30 });
     await store.saveMessage(m);
-    await runFlows(deps, [m], NOW);
+    await runFlows(deps, [m], HOURS);
     assert.equal(sent.length, 0);
     assert.equal(systems.length, 0);
     // the app's away message right after it is not an answer
     await store.saveMessage({ id: "aw", waId: CHAT, direction: "out", type: "text", text: "حياك الله، كيف اساعدك اليوم؟", timestamp: t - 29, source: "business_app" });
-    assert.equal((await catchUpUnanswered(deps, NOW + 10 * 60_000)).length, 0); // still inside the 15 minutes
-    await catchUpUnanswered(deps, NOW + 15 * 60_000);
+    assert.equal((await catchUpUnanswered(deps, HOURS + 10 * 60_000)).length, 0); // still inside the 15 minutes
+    await catchUpUnanswered(deps, HOURS + 15 * 60_000);
     assert.deepEqual(sent.map((x) => x.text), ["رد زيد"]);
   }
   // ... but if the team answers inside the 15 minutes, Zaid sends nothing
@@ -1106,9 +1107,9 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     await store.saveMessage({ id: "rt", waId: CHAT, direction: "out", type: "text", text: "أبشر", timestamp: t - 31 * 60, source: "business_app" });
     const m = msg({ id: "r1", timestamp: t - 30 });
     await store.saveMessage(m);
-    await runFlows(deps, [m], NOW);
+    await runFlows(deps, [m], HOURS);
     await store.saveMessage({ id: "rt2", waId: CHAT, direction: "out", type: "text", text: "تم", timestamp: t + 300, source: "business_app" });
-    await catchUpUnanswered(deps, NOW + 16 * 60_000);
+    await catchUpUnanswered(deps, HOURS + 16 * 60_000);
     assert.equal(sent.length, 0);
   }
   // a reply to the team's own outreach or campaign waits 15 minutes for the team, then Zaid answers
@@ -1118,9 +1119,9 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     await store.saveMessage({ id: "bc", waId: CHAT, direction: "out", type: "text", text: "ممكن توصلني بالمسؤول عن التطبيقات؟", timestamp: t - 3 * 3600, source: "business_app" });
     const m = msg({ id: "b2", text: "تفضل ياغالي كيف أقدر اخدمك", timestamp: t - 30 });
     await store.saveMessage(m);
-    await runFlows(deps, [m], NOW);
+    await runFlows(deps, [m], HOURS);
     assert.equal(sent.length, 0);
-    await catchUpUnanswered(deps, NOW + 15 * 60_000);
+    await catchUpUnanswered(deps, HOURS + 15 * 60_000);
     assert.equal(sent.length, 1);
   }
   // after Zaid answered, a new merchant message is Zaid's again even with an old team message further up
@@ -1131,7 +1132,7 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     await store.saveMessage({ id: "o3", waId: CHAT, direction: "out", type: "text", text: "العفو", timestamp: t - 29 * 3600 + 60, source: "api" });
     const m = msg({ id: "o4", text: "هل الباقة فيها كوبونات؟", timestamp: t - 30 });
     await store.saveMessage(m);
-    await runFlows(deps, [m], NOW);
+    await runFlows(deps, [m], HOURS);
     assert.equal(sent.length, 1);
   }
   // Korean letters in the output: asked again once, then handed to the team
@@ -1139,7 +1140,7 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
     const { deps, store, sent, systems } = official(["وضح لكم 경로 الإلغاء", "다시 경로"]);
     const m = msg({ id: "k1", timestamp: t - 30 });
     await store.saveMessage(m);
-    await runFlows(deps, [m], NOW);
+    await runFlows(deps, [m], HOURS);
     assert.equal(systems.length, 2);
     assert.equal(sent.length, 1);
     assert.ok(sent[0].text.includes("الفريق") && !/[가-힯]/.test(sent[0].text));
@@ -1295,4 +1296,33 @@ test("the team said it is checking and went quiet for 15 minutes: Zaid sends one
   // small talk and meeting invites are not a promise to check a problem
   assert.equal(teamPromise([m("a", "in", 0, "اسفة جداً ماقدرت اتابع"), m("b", "out", 60, "ولايهمك انا معاك بتأكد ان امورك كلها تمام قبل لا اطلع", "business_app")]), undefined);
   assert.equal(teamPromise([m("a", "in", 0, "audio"), m("b", "out", 60, "لو تحب تدخل اجتماع 10 دقايق نستعرض الخصائص", "business_app")]), undefined);
+});
+
+test("outside team hours Zaid answers a chat the team handled earlier, unless a team member is writing right now", async () => {
+  const ai: AiClient = async () => "رد زيد";
+  const mk = () => {
+    const s = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSecs: 0 } as never)], { ai });
+    s.deps.channel = { ...s.deps.channel, kind: "official" };
+    return s;
+  };
+  const at = Date.UTC(2026, 10, 4, 4, 30); // Wednesday 7:30 Riyadh, before hours
+  const t = at / 1000;
+  {
+    const s = mk();
+    await s.store.saveMessage(msg({ id: "a", text: "تاخذ وقت كثير؟", timestamp: t - 11 * 3600 - 60 }));
+    await s.store.saveMessage({ id: "b", waId: CHAT, direction: "out", type: "text", text: "حوالي 12 ل 24 ساعة", timestamp: t - 11 * 3600, source: "business_app" });
+    const q = msg({ id: "c", text: "تم التنفيذ؟", timestamp: t - 10 });
+    await s.store.saveMessage(q);
+    await runFlows(s.deps, [q], at);
+    assert.equal(s.sent.length, 1);
+  }
+  {
+    const s = mk();
+    await s.store.saveMessage(msg({ id: "a", text: "سؤال", timestamp: t - 300 }));
+    await s.store.saveMessage({ id: "b", waId: CHAT, direction: "out", type: "text", text: "أبشر", timestamp: t - 200, source: "business_app" });
+    const q = msg({ id: "c", text: "طيب ومتى؟", timestamp: t - 10 });
+    await s.store.saveMessage(q);
+    await runFlows(s.deps, [q], at);
+    assert.equal(s.sent.length, 0);
+  }
 });
