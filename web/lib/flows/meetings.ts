@@ -144,7 +144,7 @@ async function storeLinkIn(store: Store, chat: string): Promise<string | undefin
 // Saudi mobiles as booking forms write them: +966 5x, 00966 5x, 05x
 const PHONES = /(?:\+|00)?966[\s-]?5[\d\s-]{8,12}|\b05[\d\s-]{8,11}/g;
 
-function phonesIn(text: string): string[] {
+export function phonesIn(text: string): string[] {
   return (text.match(PHONES) ?? []).map((p) => {
     const d = p.replace(/\D/g, "").replace(/^00/, "");
     return d.startsWith("05") ? `966${d.slice(1)}` : d;

@@ -150,6 +150,8 @@ export type IngestStats = {
   fresh: StoredMessage[];
   /** customers newly marked as opted out by this webhook */
   optOuts: OptOutEvent[];
+  /** what the team wrote in the number's chat with itself (commands to Zaid) */
+  self: StoredMessage[];
 };
 
 const isPhone = (s: unknown): s is string => typeof s === "string" && /^\d{7,15}$/.test(s);
@@ -160,7 +162,7 @@ const customerId = (phone: unknown, userId: unknown): string | undefined =>
 
 /** Applies a full webhook body to the store. Unknown fields are ignored. */
 export async function ingest(body: any, store: Store, phoneNumberId?: string): Promise<IngestStats> {
-  const stats: IngestStats = { messages: 0, statuses: 0, echoes: 0, fresh: [], optOuts: [] };
+  const stats: IngestStats = { messages: 0, statuses: 0, echoes: 0, fresh: [], optOuts: [], self: [] };
   if (body?.object !== "whatsapp_business_account") return stats;
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
@@ -204,7 +206,10 @@ export async function ingest(body: any, store: Store, phoneNumberId?: string): P
         for (const raw of v.message_echoes ?? []) {
           const to = customerId(raw.to, raw.to_user_id);
           if (!to) continue;
-          await store.saveMessage(toStored(raw, to, "out", "business_app"));
+          const m = toStored(raw, to, "out", "business_app");
+          const own = String(v.metadata?.display_phone_number ?? "").replace(/\D/g, "");
+          if (own && to === own && !(await store.getMessage(m.id))) stats.self.push(m);
+          await store.saveMessage(m);
           stats.echoes++;
         }
       }

@@ -82,3 +82,22 @@ export function merchantContext(list: Merchant[]): string {
   const lines = list.slice(0, 5).map((m) => `- ${[`المتجر: ${m.store}`, m.platform && `المنصة: ${m.platform}`, m.plan && `الباقة: ${m.plan}`, m.end && `ينتهي الاشتراك: ${m.end}`, m.status && `الحالة: ${STATUS_AR[m.status] ?? m.status}`].filter(Boolean).join("، ")}`);
   return `${MERCHANT_RULE}\n\n<merchant>\n${lines.join("\n")}\n</merchant>`;
 }
+
+const normName = (s: string) => s.toLowerCase().replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي").replace(/[ً-ْـ]/g, "").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+
+/** The phone of the one store in the sheet with this name, or undefined when none or several match. */
+export async function phoneForStore(base: RawKV, name: string, env: Record<string, string | undefined> = process.env, fetchImpl: typeof fetch = fetch): Promise<string | undefined> {
+  const want = normName(name);
+  if (want.length < 3) return undefined;
+  const index = await loadIndex(base, env, fetchImpl);
+  const exact = new Set<string>(), partial = new Set<string>();
+  for (const [phone, list] of Object.entries(index)) {
+    for (const m of list) {
+      const got = normName(m.store);
+      if (got === want) exact.add(phone);
+      else if (got.includes(want) || want.includes(got)) partial.add(phone);
+    }
+  }
+  const pick = exact.size ? exact : partial;
+  return pick.size === 1 ? [...pick][0] : undefined;
+}
