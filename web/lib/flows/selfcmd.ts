@@ -23,9 +23,10 @@ const DAYS: [RegExp, number][] = [
 ];
 const DIGITS = (s: string) => s.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
 // words that end the store name in the command
-const NAME_END = /\s(?:الساع[هة]|ساع[هة]|اليوم|بكر[اةه]|غدا|غداً|بعد|يوم|الاحد|الأحد|الاثنين|الإثنين|الثلاثاء|الاربعاء|الأربعاء|الخميس|الجمعة|الجمعه|السبت|الصبح|العصر|الظهر|المغرب|\d)/;
+const NAME_END = /\s(?:الساع[هة]|ساع[هة]|اليوم|بكر[اةه]|غدا|غداً|بعد|يوم|الاحد|الأحد|الاثنين|الإثنين|الثلاثاء|الاربعاء|الأربعاء|الخميس|الجمعة|الجمعه|السبت|الصبح|العصر|الظهر|المغرب|حسب|المتاح|او|أو|واعط|اعط|بالرقم|على|\d)/;
 
-export type BookCommand = { start: number; email: string; phone?: string; name?: string; store?: string };
+/** `starts`: the requested time on each day the command names, in order ("اليوم او بكرا"); `start` is the first */
+export type BookCommand = { start: number; starts: number[]; email: string; phone?: string; name?: string; store?: string };
 
 /** Reads an "احجز ..." command. Returns the booking, an Arabic reason it cannot, or null when the text is no command. */
 export function parseBook(raw: string, now: number, s: Pick<Settings, "tz">): BookCommand | string | null {
@@ -39,19 +40,26 @@ export function parseBook(raw: string, now: number, s: Pick<Settings, "tz">): Bo
   // the time: everything else is removed first so a phone or an email never reads as an hour
   let rest = ` ${text} `.replace(EMAIL, " ").replace(URLS, " ").replace(/(?:\+|00)?966[\s-]?5[\d\s-]{8,12}|\b05[\d\s-]{8,11}/g, " ");
   const today = localDay(now, s.tz);
-  let day: { y: number; m: number; d: number } | undefined;
+  type Day = { y: number; m: number; d: number };
+  const shift = (n: number) => localDay(now + n * 86400000, s.tz);
+  // every day the command names, in the order written
+  const found: { at: number; day: Day }[] = [];
   const date = rest.match(/\b(\d{1,2})\s*[\/-]\s*(\d{1,2})(?:\s*[\/-]\s*(\d{2,4}))?\b/);
   if (date) {
     const y = date[3] ? (date[3].length === 2 ? 2000 + Number(date[3]) : Number(date[3])) : today.y;
-    day = { y, m: Number(date[2]), d: Number(date[1]) };
-    rest = rest.replace(date[0], " ");
+    found.push({ at: rest.indexOf(date[0]), day: { y, m: Number(date[2]), d: Number(date[1]) } });
+    rest = rest.replace(date[0], " ".repeat(date[0].length));
   }
-  const shift = (n: number) => localDay(now + n * 86400000, s.tz);
-  if (!day && /بعد\s*(?:بكر[اةه]|غد)/.test(rest)) day = shift(2);
-  else if (!day && /بكر[اةه]|غدا|غداً|الغد/.test(rest)) day = shift(1);
-  if (!day) for (const [re, wd] of DAYS) if (re.test(rest)) day = shift((wd - today.weekday + 7) % 7);
-  const dated = !!day;
-  day ??= today;
+  const words: [RegExp, () => Day][] = [
+    [/بعد\s*(?:بكر[اةه]|غد[اً]*)/g, () => shift(2)],
+    [/(?<!بعد\s*)(?:بكر[اةه]|غداً|غدا|الغد)/g, () => shift(1)],
+    [/اليوم/g, () => today],
+    ...DAYS.map(([re, wd]): [RegExp, () => Day] => [new RegExp(re.source, "g"), () => shift((wd - today.weekday + 7) % 7)]),
+  ];
+  for (const [re, at] of words) for (const w of rest.matchAll(re)) found.push({ at: w.index ?? 0, day: at() });
+  found.sort((a, b) => a.at - b.at);
+  const dated = found.length > 0;
+  const days: Day[] = dated ? found.map((f) => f.day) : [today];
 
   const t = rest.match(/(?:الساع[هة]|ساع[هة])?\s*\b(\d{1,2})(?:[:.](\d{2}))?\b\s*(ونص|و نص|وربع|و ربع|الا ربع|إلا ربع)?\s*(صباحاً|صباحا|الصبح|ص(?=\s|$)|am\b|مساءً|مساء|العصر|الظهر|المغرب|الليل|م(?=\s|$)|pm\b)?/i);
   if (!t) return "ما لقيت وقت الاجتماع في الأمر";
@@ -63,13 +71,14 @@ export function parseBook(raw: string, now: number, s: Pick<Settings, "tz">): Bo
   else if (mark || h < 9) h = h < 12 ? h + 12 : h; // a bare 1 to 8 is the afternoon: meetings run 10:00 to 16:30
   if (mi < 0) { h -= 1; mi = 45; }
   if (h > 23 || mi > 59) return "وقت الاجتماع غير واضح";
-  const start = atLocal(day.y, day.m, day.d, `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`, s.tz);
-  if (start < now) return dated ? "وقت الاجتماع فات" : "الوقت فات اليوم، اكتب اليوم المطلوب (بكرا أو اسم اليوم أو التاريخ)";
+  const hhmm = `${String(h).padStart(2, "0")}:${String(mi).padStart(2, "0")}`;
+  const starts = [...new Set(days.map((x) => atLocal(x.y, x.m, x.d, hhmm, s.tz)))].filter((t) => t >= now);
+  if (!starts.length) return dated ? "وقت الاجتماع فات" : "الوقت فات اليوم، اكتب اليوم المطلوب (بكرا أو اسم اليوم أو التاريخ)";
 
   // the store name: what follows احجز (and اجتماع/موعد) up to the time, the day or a number
-  const after = ` ${text.replace(EMAIL, " ").replace(URLS, " ")} `.replace(/^\s*احجز\s*(?:لي\s*)?(?:اجتماع|موعد|ميتنق|ميتينق)?\s*(?:مع|ل|لـ)?\s*/, " ");
+  const after = ` ${text.replace(EMAIL, " ").replace(URLS, " ")} `.replace(/^\s*احجز\s*(?:لي\s*)?(?:ال)?(?:اجتماع|موعد|ميتنق|ميتينق)?\s*(?:مع|ل|لـ)?\s*(?:ل?متجر|لـ\s*متجر)?\s*/, " ");
   const name = after.split(NAME_END)[0].replace(/[،,.:؟?]+/g, " ").trim() || undefined;
-  return { start, email, phone, name, store };
+  return { start: starts[0], starts, email, phone, name, store };
 }
 
 type Deps = { base: RawKV; store: Store; state: RawKV; channel: Channel; cal?: Calendar; now?: number };
@@ -78,18 +87,26 @@ type Deps = { base: RawKV; store: Store; state: RawKV; channel: Channel; cal?: C
 export async function runSelfCommands(msgs: StoredMessage[], d: Deps): Promise<string[]> {
   const logs: string[] = [];
   for (const m of msgs) {
-    if (m.type !== "text" || !m.text) continue;
+    // a command can come as text or as the caption of a picture (the merchant's details in a screenshot)
+    const body = m.text ?? m.caption;
+    if (!body || !/^\s*احجز/.test(body)) continue;
     const now = d.now ?? Date.now();
-    if (!/^\s*احجز/.test(m.text)) continue;
     if (!(await d.state.set(`self:${m.id}`, "1", { ex: 7 * 86400, nx: true }))) continue; // Meta redelivers
     try {
       if (!(await connection(d.base)).connected) throw new Error("Google Calendar is not connected");
       const s = await getSettings(d.base);
-      const cmd = parseBook(m.text, now, s);
+      const cmd = parseBook(body, now, s);
       if (!cmd) continue;
       if (typeof cmd === "string") throw new Error(cmd);
       const phone = cmd.phone ?? (await findChat(d, cmd));
       const cal = d.cal ?? new Calendar(d.base);
+      // "اليوم او بكرا": the first of the named days whose time is free; a single day is booked as asked
+      if (cmd.starts.length > 1) {
+        const busy = await cal.busy(cmd.starts[0], cmd.starts[cmd.starts.length - 1] + s.minutes * 60000);
+        const ok = cmd.starts.find((t) => !busy.some((b) => b.start < t + s.minutes * 60000 && b.end > t));
+        if (ok === undefined) throw new Error("all the times in the command are taken");
+        cmd.start = ok;
+      }
       // the store name from the CRM sheet and the store link from the chat, when the command leaves them out
       const listed = phone ? await findMerchant(d.base, phone).then((l) => l[0]?.store).catch(() => undefined) : undefined;
       const site = cmd.store ?? (phone ? await storeLinkIn(d.store, phone).catch(() => undefined) : undefined);

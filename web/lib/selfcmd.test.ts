@@ -34,3 +34,14 @@ test("self command: not a command, or missing parts", () => {
   assert.match(String(parseBook("احجز اجتماع سما الساعه 3", NOW, { tz })), /إيميل/);
   assert.match(String(parseBook("احجز اجتماع سما الساعه 11 a@b.co", NOW, { tz })), /فات/);
 });
+
+test("self command: the Fustoqah one, with two days to choose from", () => {
+  const r = parseBook("احجز الاجتماع لمتجر فستقة حسب المتاح الساعه 4 اليوم او غدا واعطي اشعار للتاجر بالرقم الموضح بالصوره Info@fustoqah.com", NOW, { tz });
+  assert.ok(r && typeof r === "object");
+  assert.equal(r.name, "فستقة");
+  assert.equal(r.email, "Info@fustoqah.com");
+  assert.deepEqual(r.starts.map((t) => localIso(t, tz)), ["2026-11-04T16:00", "2026-11-05T16:00"]);
+  const b = parseBook("احجز اجتماع لمى بعد بكرا 3 a@b.co", NOW, { tz });
+  assert.ok(b && typeof b === "object");
+  assert.deepEqual(b.starts.map((t) => localIso(t, tz)), ["2026-11-06T15:00"]);
+});
