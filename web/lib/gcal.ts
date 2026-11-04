@@ -221,10 +221,19 @@ export class Calendar {
   }
 
   /** `chat` empty: a meeting booked for a merchant whose WhatsApp number is not known */
-  async book(o: { start: number; end: number; title: string; email: string; chat: string; name?: string; tz: string; store?: string; note?: string }): Promise<CalEvent> {
+  async book(o: { start: number; end: number; title: string; email: string; chat: string; name?: string; storeName?: string; tz: string; store?: string; note?: string }): Promise<CalEvent> {
+    const who = o.storeName || o.name;
+    const lines = [
+      o.note ?? "حجزه زيد من واتساب.",
+      o.storeName ? `اسم المتجر: ${o.storeName}` : "",
+      o.name && o.name !== o.storeName ? `اسم التاجر في واتساب: ${o.name}` : "",
+      o.chat ? `رقم التاجر: +${o.chat}` : "رقم التاجر: غير معروف",
+      o.store ? `رابط المتجر: ${o.store}` : "",
+      `الإيميل: ${o.email}`,
+    ];
     const body = {
-      summary: o.name ? `${o.title} - ${o.name}` : o.title,
-      description: `${o.note ?? "حجزه زيد من واتساب."}${o.chat ? ` رقم التاجر: +${o.chat}` : ""}${o.store ? `\nرابط المتجر: ${o.store}` : ""}`,
+      summary: who ? `${o.title} - ${who}` : o.title,
+      description: lines.filter(Boolean).join("\n"),
       start: { dateTime: new Date(o.start).toISOString(), timeZone: o.tz },
       end: { dateTime: new Date(o.end).toISOString(), timeZone: o.tz },
       attendees: [{ email: o.email }],

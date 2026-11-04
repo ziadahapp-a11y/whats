@@ -4,6 +4,7 @@
 import type { RawKV } from "../wa/auth";
 import type { Store } from "../store";
 import type { Channel } from "./engine";
+import { findMerchant } from "../merchants";
 import { Calendar, connection, type CalEvent, freeSlots, getSettings, localIso, slotLabel, spread, timeLabel, type Settings } from "../gcal";
 
 export const HANDOFF = "جاري تحويلك للفريق المختص\n\nان لم تتلقى رد خلال 24 ساعة، فضلاً عاود الإرسال فذلك بسبب كثرة الرسائل أو اجازة الأسبوع";
@@ -103,7 +104,8 @@ ${list}`;
         const slot = (await free(cal, s, now())).find((t) => localIso(t, s.tz) === when);
         if (slot === undefined) throw new Error(`${when} is not free any more`);
         const site = siteUrl(link) ?? (store ? await storeLinkIn(store, chat) : undefined);
-        const ev = await cal.book({ start: slot, end: slot + s.minutes * 60000, title: s.title, email, chat, name, tz: s.tz, store: site });
+        const storeName = await findMerchant(base, chat).then((l) => l[0]?.store).catch(() => undefined);
+        const ev = await cal.book({ start: slot, end: slot + s.minutes * 60000, title: s.title, email, chat, name, storeName, tz: s.tz, store: site });
         // the system's confirmation replaces Zaid's own wording, so the merchant reads it once
         return `تم حجز موعدنا ${slotLabel(slot, s.tz)} بإذن الله، ووصلتك دعوة على ${email}.${meetLine(ev)}`;
       } catch (e) {
@@ -133,7 +135,7 @@ export function siteUrl(raw?: string): string | undefined {
 }
 
 /** the last store link the merchant wrote in the chat */
-async function storeLinkIn(store: Store, chat: string): Promise<string | undefined> {
+export async function storeLinkIn(store: Store, chat: string): Promise<string | undefined> {
   const msgs = (await store.messages(chat, 60)).filter((m) => m.direction === "in").reverse();
   for (const m of msgs) for (const raw of (`${m.text ?? ""}`.match(SITES) ?? []).reverse()) {
     const u = siteUrl(raw.replace(/[.,!?؟،:;)]+$/, ""));

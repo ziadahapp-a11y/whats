@@ -7,8 +7,8 @@ import type { RawKV } from "../wa/auth";
 import type { Store, StoredMessage } from "../store";
 import type { Channel } from "./engine";
 import { atLocal, Calendar, connection, getSettings, localDay, slotLabel, type Settings } from "../gcal";
-import { ChatMatcher, phonesIn, siteUrl } from "./meetings";
-import { phoneForStore } from "../merchants";
+import { ChatMatcher, phonesIn, siteUrl, storeLinkIn } from "./meetings";
+import { findMerchant, phoneForStore } from "../merchants";
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const URLS = /(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?/gi;
@@ -90,7 +90,10 @@ export async function runSelfCommands(msgs: StoredMessage[], d: Deps): Promise<s
       if (typeof cmd === "string") throw new Error(cmd);
       const phone = cmd.phone ?? (await findChat(d, cmd));
       const cal = d.cal ?? new Calendar(d.base);
-      const ev = await cal.book({ start: cmd.start, end: cmd.start + s.minutes * 60000, title: s.title, email: cmd.email, chat: phone ?? "", name: cmd.name, tz: s.tz, store: cmd.store, note: "حجزه الفريق من محادثة زيد." });
+      // the store name from the CRM sheet and the store link from the chat, when the command leaves them out
+      const listed = phone ? await findMerchant(d.base, phone).then((l) => l[0]?.store).catch(() => undefined) : undefined;
+      const site = cmd.store ?? (phone ? await storeLinkIn(d.store, phone).catch(() => undefined) : undefined);
+      const ev = await cal.book({ start: cmd.start, end: cmd.start + s.minutes * 60000, title: s.title, email: cmd.email, chat: phone ?? "", storeName: listed ?? cmd.name, name: phone ? (await d.store.conversations(200)).find((c) => c.waId === phone)?.name : undefined, tz: s.tz, store: site, note: "حجزه الفريق من محادثة زيد." });
       let told = "no WhatsApp number found";
       if (phone) {
         if ((await d.store.window(phone, Math.floor(now / 1000))).windowOpen) {
