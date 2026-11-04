@@ -1116,7 +1116,7 @@ test("official Zaid: one reply per burst, waits 15 minutes in a chat the team an
   {
     const { catchUpUnanswered } = await import("./flows/engine");
     const { deps, store, sent } = official(["رد زيد"]);
-    await store.saveMessage({ id: "bc", waId: CHAT, direction: "out", type: "text", text: "ممكن توصلني بالمسؤول عن التطبيقات؟", timestamp: t - 3 * 3600, source: "business_app" });
+    await store.saveMessage({ id: "bc", waId: CHAT, direction: "out", type: "text", text: "ممكن توصلني بالمسؤول عن التطبيقات؟", timestamp: t - 40 * 60, source: "business_app" });
     const m = msg({ id: "b2", text: "تفضل ياغالي كيف أقدر اخدمك", timestamp: t - 30 });
     await store.saveMessage(m);
     await runFlows(deps, [m], HOURS);
@@ -1325,4 +1325,29 @@ test("outside team hours Zaid answers a chat the team handled earlier, unless a 
     await runFlows(s.deps, [q], at);
     assert.equal(s.sent.length, 0);
   }
+});
+
+test("a team message from hours ago does not hold the merchant's next question", async () => {
+  const ai: AiClient = async () => "رد زيد";
+  const s = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSecs: 0 } as never)], { ai });
+  s.deps.channel = { ...s.deps.channel, kind: "official" };
+  const at = NOW + 18 * 3600_000; // Tuesday 11:13 Riyadh
+  const t = at / 1000;
+  await s.store.saveMessage(msg({ id: "a", text: "بجدد", timestamp: t - 16 * 3600 }));
+  await s.store.saveMessage({ id: "b", waId: CHAT, direction: "out", type: "text", text: "تمام وخبرني", timestamp: t - 15.5 * 3600, source: "business_app" });
+  const q = msg({ id: "c", text: "بكم", timestamp: t - 10 });
+  await s.store.saveMessage(q);
+  await runFlows(s.deps, [q], at);
+  assert.equal(s.sent.length, 1);
+});
+
+test("price answers follow the merchant's plan, with the annual offer only while it runs", async () => {
+  const { priceRule } = await import("./flows/links");
+  const on = priceRule(Date.UTC(2026, 10, 4, 9));
+  assert.match(on, /سنة \+ سنة مجاناً/);
+  assert.match(on, /النمو 249 شهري أو 2,990 سنوي/);
+  assert.match(on, /الانطلاقة is NOT in the offer/);
+  const off = priceRule(Date.UTC(2026, 10, 5, 21, 30)); // 6 Nov 00:30 Riyadh
+  assert.match(off, /There is no annual offer now/);
+  assert.ok(!off.includes("Current offer"));
 });

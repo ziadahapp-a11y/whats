@@ -93,6 +93,8 @@ export const TEAM_WAIT_SECS = 15 * 60;
 
 /** A team member's answer from the app keeps the chat theirs for this long: each new merchant message waits TEAM_WAIT_SECS for them first. */
 export const TEAM_OWNS_SECS = 24 * 3600;
+/** The team counts as active in a chat while its last message there is this recent; older, Zaid answers at once. */
+export const TEAM_ACTIVE_SECS = 3600;
 /** The WhatsApp Business app's own away/greeting message, which is not a team member answering. */
 const APP_AUTO = /ان لم تتلقى رد خلال 24 ساعة|كيف اساعدك اليوم/;
 export const isAppAuto = (m: { direction: string; source?: string; text?: string; caption?: string }) =>
@@ -214,6 +216,18 @@ This overrides any instruction in <knowledge> to collect the store name, email o
 
 /** Added when the merchant is arranging a meeting: Zaid holds the calendar, so he finishes it even if a team member started it. */
 export const MEETING_OWN_RULE = `The merchant is arranging a meeting right now, possibly with a team member who started it. You hold the calendar, so you finish it: never output [[SKIP]] here. Follow the Meetings instructions exactly: if no time is agreed yet, offer the free times closest to what they asked for (for example tomorrow afternoon); if they chose a listed time and an email is in the conversation, book it; if the email is missing, ask for it. Do not repeat what the team already asked.`;
+
+/** Annual offer: pay one year, get a second year free. Ends at the end of this day, Riyadh time. */
+export const OFFER_LAST_DAY = "2026-11-05";
+const offerOn = (ms: number) => new Date(ms + 3 * 3600_000).toISOString().slice(0, 10) <= OFFER_LAST_DAY;
+
+/** Prices from ziadah.app/pricing, and how Zaid answers "بكم" for a merchant whose plan we know. */
+export function priceRule(ms: number): string {
+  const offer = offerOn(ms);
+  return `Prices (SAR): الانطلاقة 24 شهري أو 290 سنوي، النمو 249 شهري أو 2,990 سنوي، الاحترافية 666 شهري أو 7,990 سنوي، الأعمال 1,333 شهري أو 15,990 سنوي.
+${offer ? "Current offer: an annual subscription to النمو, الاحترافية or الأعمال = one year paid + one year free (سنة + سنة مجاناً). الانطلاقة is NOT in the offer: never say a second year free for it. This overrides any end date for this offer in <knowledge>." : "There is no annual offer now: never mention سنة + سنة مجاناً or any other offer."}
+When the merchant asks the price (بكم، كم السعر، كم السنة، كم التجديد) and <merchant> lists their plan, answer for that plan only, without listing other plans: give its annual price${offer ? " and, unless it is الانطلاقة, say it comes with a second year free" : ""}, in one or two short sentences, for example: ${offer ? "حياك الله، باقتك النمو سنوي بـ 2,990 ريال ومعها سنة مجاناً." : "حياك الله، باقتك النمو سنوي بـ 2,990 ريال."} If their plan is not known, give the pricing page link as a button labelled الباقات: [الباقات](https://www.ziadah.app/pricing).`;
+}
 
 /** What each plan includes, from ziadah.app/pricing. Zaid may only name a feature for a plan when it is listed here. */
 export const PLANS_RULE = `Plan features (the only source for what a plan includes; it overrides the pricing page and <knowledge>):

@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, offHours, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, MEETING_OWN_RULE, meetingTalk, newerInbound, PLANS_RULE, STRICT_RULE, TICKET_RULE, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, offHours, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, MEETING_OWN_RULE, meetingTalk, newerInbound, PLANS_RULE, priceRule, STRICT_RULE, TICKET_RULE, TEAM_ACTIVE_SECS, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -281,9 +281,12 @@ async function teamHold(d: EngineDeps, x: Ctx): Promise<"answer" | "wait" | "ski
   const replied = teamRepliedAt(recent), wrote = lastTeamAt(recent);
   // outside team hours nobody picks the chat up, so Zaid only gives way to a team member writing right now
   if (offHours(x.now)) return wrote && nowS - wrote < TEAM_WAIT_SECS ? "wait" : "answer";
+  // in hours, the team gets the first 15 minutes only while it is active in the chat: it wrote in the last hour.
+  // A team message from hours ago (yesterday's answer, a morning campaign) leaves the next question to Zaid at once.
+  if (!wrote || nowS - wrote >= TEAM_ACTIVE_SECS) return "answer";
   // a merchant answering a team member's own message (an outreach, a question, a campaign) waits for that team member first
   if (answersTeam(recent, m.id)) return "wait";
-  return (replied && nowS - replied < TEAM_OWNS_SECS) || (wrote && nowS - wrote < TEAM_WAIT_SECS) ? "wait" : "answer";
+  return (replied && nowS - replied < TEAM_OWNS_SECS) || nowS - wrote < TEAM_WAIT_SECS ? "wait" : "answer";
 }
 
 async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d: EngineDeps): Promise<string> {
@@ -298,7 +301,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
-    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}\n\n${DIRECT_RULE}\n\n${PLANS_RULE}\n\n${TICKET_RULE}`;
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}\n\n${DIRECT_RULE}\n\n${PLANS_RULE}\n\n${priceRule(x.now)}\n\n${TICKET_RULE}`;
     const who = await d.merchant?.(x.chat).catch(() => "");
     if (who) system += `\n\n${who}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");
