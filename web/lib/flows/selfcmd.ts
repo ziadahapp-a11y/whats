@@ -8,7 +8,7 @@ import type { Store, StoredMessage } from "../store";
 import type { Channel } from "./engine";
 import { atLocal, Calendar, connection, getSettings, localDay, slotLabel, type Settings } from "../gcal";
 import { ChatMatcher, phonesIn, siteUrl, storeLinkIn } from "./meetings";
-import { findMerchant, phoneForStore } from "../merchants";
+import { findMerchant, merchantByEmail, phoneForStore } from "../merchants";
 
 const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/;
 const URLS = /(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s]*)?/gi;
@@ -23,7 +23,7 @@ const DAYS: [RegExp, number][] = [
 ];
 const DIGITS = (s: string) => s.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660)).replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0));
 // words that end the store name in the command
-const NAME_END = /\s(?:الساع[هة]|ساع[هة]|اليوم|بكر[اةه]|غدا|غداً|بعد|يوم|الاحد|الأحد|الاثنين|الإثنين|الثلاثاء|الاربعاء|الأربعاء|الخميس|الجمعة|الجمعه|السبت|الصبح|العصر|الظهر|المغرب|حسب|المتاح|او|أو|واعط|اعط|بالرقم|على|\d)/;
+const NAME_END = /\s(?:الساع[هة]|ساع[هة]|اليوم|بكر[اةه]|غدا|غداً|بعد|يوم|الاحد|الأحد|الاثنين|الإثنين|الثلاثاء|الاربعاء|الأربعاء|الخميس|الجمعة|الجمعه|السبت|الصبح|العصر|الظهر|المغرب|حسب|المتاح|او|أو|واعط|اعط|بالرقم|برقم|رقم|وارسل|ارسل|تنبيه|اشعار|إشعار|على|\d)/;
 
 /** `starts`: the requested time on each day the command names, in order ("اليوم او بكرا"); `start` is the first */
 export type BookCommand = { start: number; starts: number[]; email: string; phone?: string; name?: string; store?: string };
@@ -132,6 +132,8 @@ export async function runSelfCommands(msgs: StoredMessage[], d: Deps): Promise<s
 async function findChat(d: Deps, cmd: BookCommand): Promise<string | undefined> {
   const byEmail = await new ChatMatcher(d.store).chatFor({ id: "", start: 0, end: 0, emails: [cmd.email.toLowerCase()] });
   if (byEmail) return byEmail;
+  const listed = await merchantByEmail(d.base, cmd.email).catch(() => undefined);
+  if (listed) return listed.phone;
   if (!cmd.name) return undefined;
   const bySheet = await phoneForStore(d.base, cmd.name).catch(() => undefined);
   if (bySheet) return bySheet;

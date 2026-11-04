@@ -45,3 +45,19 @@ test("self command: the Fustoqah one, with two days to choose from", () => {
   assert.ok(b && typeof b === "object");
   assert.deepEqual(b.starts.map((t) => localIso(t, tz)), ["2026-11-06T15:00"]);
 });
+
+import { buildIndex } from "./merchants";
+import { phonesIn } from "./flows/meetings";
+
+test("self command: South Coffee wording leaves no fake store name", () => {
+  const r = parseBook("احجز اجتماع info.southcoffee@gmail.com برقم المتجر وارسل تنبيه اليوم الساعه 6", NOW, { tz });
+  assert.ok(r && typeof r === "object");
+  assert.equal(r.name, undefined);
+  assert.equal(localIso(r.start, tz), "2026-11-04T18:00");
+});
+
+test("merchant emails from the sheet, and any-country numbers in a booking", () => {
+  const idx = buildIndex([{ values: [["Store Name", "Phone", "Email", "Extra Emails"], ["South Roastery", "971507405545", "Info.SouthCoffee@gmail.com", ""]] }]);
+  assert.deepEqual(idx["971507405545"][0].emails, ["info.southcoffee@gmail.com"]);
+  assert.deepEqual(phonesIn("حجزه الفريق.\nرقم التاجر: +971507405545\nالإيميل: x@y.co"), ["971507405545"]);
+});

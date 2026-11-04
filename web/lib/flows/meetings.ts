@@ -147,10 +147,12 @@ export async function storeLinkIn(store: Store, chat: string): Promise<string | 
 const PHONES = /(?:\+|00)?966[\s-]?5[\d\s-]{8,12}|\b05[\d\s-]{8,11}/g;
 
 export function phonesIn(text: string): string[] {
-  return (text.match(PHONES) ?? []).map((p) => {
+  // the number Zaid writes in a booking, any country: "رقم التاجر: +971507405545"
+  const own = [...text.matchAll(/رقم التاجر:\s*\+?(\d{9,15})/g)].map((m) => m[1]);
+  return [...own, ...(text.match(PHONES) ?? []).map((p) => {
     const d = p.replace(/\D/g, "").replace(/^00/, "");
     return d.startsWith("05") ? `966${d.slice(1)}` : d;
-  }).filter((d) => /^9665\d{8}$/.test(d));
+  }).filter((d) => /^9665\d{8}$/.test(d))];
 }
 
 /** The WhatsApp chat a calendar event belongs to: Zaid's own tag, a phone in the booking details, or a guest email the merchant wrote in a chat. */

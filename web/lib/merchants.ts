@@ -13,7 +13,8 @@ const FRESH_SECS = 30 * 60;
 /** a failed read (Google not connected, scope missing) is not retried on every message */
 const RETRY_SECS = 10 * 60;
 
-export type Merchant = { store: string; platform?: string; plan?: string; end?: string; status?: string };
+/** `emails` is only for finding a merchant by email (meeting bookings); it is never shown to Zaid */
+export type Merchant = { store: string; platform?: string; plan?: string; end?: string; status?: string; emails?: string[] };
 type Index = Record<string, Merchant[]>;
 
 const STATUS_AR: Record<string, string> = { paid: "مشترك (مدفوع)", trial: "فترة تجربة", inactive: "مثبّت بدون اشتراك فعّال", lost: "الاشتراك منتهي أو موقوف" };
@@ -34,13 +35,14 @@ export function buildIndex(tabs: { values?: string[][] }[]): Index {
     const [head, ...rows] = t.values ?? [];
     if (!head) continue;
     const col = (name: string) => head.findIndex((h) => String(h).trim().toLowerCase() === name.toLowerCase());
-    const c = { name: col("Store Name"), phone: col("Phone"), extra: col("Extra Phones"), plat: col("Platform"), plan: col("Plan"), end: col("End Date"), st: col("Subscription Status") };
+    const c = { name: col("Store Name"), phone: col("Phone"), extra: col("Extra Phones"), email: col("Email"), xemail: col("Extra Emails"), plat: col("Platform"), plan: col("Plan"), end: col("End Date"), st: col("Subscription Status") };
     if (c.name < 0 || c.phone < 0) continue;
     for (const r of rows) {
       const cell = (i: number) => (i >= 0 ? String(r[i] ?? "").trim() : "");
       const store = cell(c.name);
       if (!store) continue;
-      const m: Merchant = { store, platform: cell(c.plat) || undefined, plan: cell(c.plan) || undefined, end: cell(c.end) || undefined, status: cell(c.st) || undefined };
+      const emails = `${cell(c.email)} ${cell(c.xemail)}`.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? [];
+      const m: Merchant = { store, platform: cell(c.plat) || undefined, plan: cell(c.plan) || undefined, end: cell(c.end) || undefined, status: cell(c.st) || undefined, ...(emails.length ? { emails: [...new Set(emails)] } : {}) };
       const phones = `${cell(c.phone)} ${cell(c.extra)}`.split(/[\/,،;\s]+/).map(normPhone).filter((p): p is string => !!p);
       for (const p of new Set(phones)) (index[p] ??= []).push(m);
     }
@@ -100,4 +102,14 @@ export async function phoneForStore(base: RawKV, name: string, env: Record<strin
   }
   const pick = exact.size ? exact : partial;
   return pick.size === 1 ? [...pick][0] : undefined;
+}
+
+/** The phone and store of the merchant with this email in the sheet, or undefined when none or several numbers match. */
+export async function merchantByEmail(base: RawKV, email: string, env: Record<string, string | undefined> = process.env, fetchImpl: typeof fetch = fetch): Promise<{ phone: string; store: string } | undefined> {
+  const want = email.trim().toLowerCase();
+  const hits = new Map<string, string>();
+  for (const [phone, list] of Object.entries(await loadIndex(base, env, fetchImpl))) for (const m of list) if (m.emails?.includes(want)) hits.set(phone, m.store);
+  if (hits.size !== 1) return undefined;
+  const [[phone, store]] = [...hits];
+  return { phone, store };
 }
