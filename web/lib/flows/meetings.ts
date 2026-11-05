@@ -235,7 +235,12 @@ export async function sendMeetingReminders(d: Deps, now = Date.now(), cal = new 
     const fresh = !ev.chat && !!ev.created && now - ev.created < 2 * 86400000;
     const due = ev.start - now <= REMIND_MINUTES * 60000;
     if (!fresh && !due) continue;
-    const chat = await match.chatFor(ev);
+    // already confirmed and reminded: nothing left to send, so no chat lookup (it can read 100 chats)
+    if ((!fresh || (await d.state.get(`mc:${ev.id}`))) && (!due || (await d.state.get(`mr:${ev.id}`)))) continue;
+    // the lookup is kept (30 minutes when found, 10 when not): an unmatched event used to rescan every chat on every wake-up
+    const known = await d.state.get(`mx:${ev.id}`);
+    const chat = known !== null ? known || undefined : await match.chatFor(ev);
+    if (known === null) await d.state.set(`mx:${ev.id}`, chat ?? "", { ex: chat ? 1800 : 600 });
     if (!chat || !(await d.store.window(chat, Math.floor(now / 1000))).windowOpen) continue;
     if (fresh && (await d.state.set(`mc:${ev.id}`, "1", { ex: 30 * 86400, nx: true }))) {
       // a confirmation this close to the start already says when; no separate reminder after it

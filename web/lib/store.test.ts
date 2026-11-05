@@ -166,3 +166,15 @@ test("MCP auth", () => {
   assert.equal(isAuthorized(new Request("https://a/api/mcp?key=nope"), secret), false);
   assert.equal(isAuthorized(new Request("https://a/api/mcp", { headers: { Authorization: "Bearer short" } }), "short"), false);
 });
+
+test("activeSince reads only chats with a message at or after the time, newest first", async () => {
+  const s = new Store(new MemoryKV());
+  const msg = (id: string, waId: string, timestamp: number) => s.saveMessage({ id, waId, direction: "in", type: "text", text: id, timestamp });
+  await msg("a", "966500000001", 1_000);
+  await msg("b", "966500000002", 5_000);
+  await msg("c", "966500000003", 9_000);
+  const got = await s.activeSince(5_000, 10, 9_500);
+  assert.deepEqual(got.map((c) => c.waId), ["966500000003", "966500000002"]);
+  assert.equal(got[0].windowOpen, true);
+  assert.deepEqual((await s.activeSince(9_001)).length, 0);
+});

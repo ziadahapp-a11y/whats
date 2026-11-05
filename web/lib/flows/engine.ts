@@ -253,7 +253,7 @@ async function transcriptFor(x: Ctx, d: EngineDeps, a: { context: number; scope:
   if (a.scope === "recent") {
     const since = x.now / 1000 - a.hours * 3600;
     const out: string[] = [];
-    for (const c of await d.store.conversations(30)) {
+    for (const c of await d.store.activeSince(Math.floor(since), 30)) {
       if (c.lastAt < since) continue;
       const msgs = (await d.store.messages(c.waId, a.context)).filter((m) => m.timestamp >= since && m.type !== "reaction");
       if (msgs.length) out.push(`## ${c.name || c.waId}\n${msgs.map((m) => line(m, c.name)).join("\n")}`);
@@ -843,7 +843,7 @@ export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: {
   const logs: LogEntry[] = [];
   const nowS = Math.floor(now / 1000);
   let done = 0;
-  for (const c of await d.store.conversations(scan, undefined, nowS)) {
+  for (const c of await d.store.activeSince(nowS - 24 * 3600, scan, nowS)) {
     if (done >= max || (d.deadline && Date.now() > d.deadline)) break;
     // the Business app's away message is not an answer: look past it
     const m = c.last && isAppAuto(c.last) ? (await d.store.messages(c.waId, 6)).filter((k) => !isAppAuto(k)).pop() : c.last;

@@ -15,7 +15,7 @@ const LATEST = 23.5 * 3600;
 const CLOSED = /جاري تحويلك للفريق|تم إيقاف الرسائل|سعدنا بخدمتك|ننتظر ردك عشان نكمل معك|موعدنا|حاضرين لأي|العفو|وصلتنا رسالتكم|مالك إلا اللي يرضيك/;
 
 export async function sendFollowups(d: { store: Store; state: RawKV; channel: Channel }, now = Math.floor(Date.now() / 1000), scan = 200): Promise<string[]> {
-  const convs = await d.store.conversations(scan, undefined, now);
+  const convs = await d.store.activeSince(now - 24 * 3600, scan, now);
   const due = convs.filter((c) => {
     const age = c.lastInboundAt ? now - c.lastInboundAt : -1;
     return age >= FOLLOWUP_AFTER && age < LATEST && c.last?.direction === "out" && c.last.source !== "business_app" && !CLOSED.test(c.last.text ?? "");
