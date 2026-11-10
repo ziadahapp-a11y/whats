@@ -26,7 +26,8 @@ test("account checks fail closed", () => {
   assert.deepEqual(bad({ status: undefined }), ["account.connected"]);
   assert.deepEqual(bad({ code_verification_status: "NOT_VERIFIED" }), ["account.verified"]);
   assert.deepEqual(bad({ quality_rating: "YELLOW" }), ["account.quality"]);
-  assert.deepEqual(bad({ quality_rating: "UNKNOWN" }), ["account.quality"]);
+  assert.deepEqual(bad({ quality_rating: "UNKNOWN" }), [], "a not-yet-rated number may send, capped");
+  assert.deepEqual(bad({ quality_rating: undefined }), ["account.quality"]);
   assert.deepEqual(bad({ messaging_limit_tier: "TIER_BANANA" }), ["account.tier"]);
   assert.deepEqual(bad({ messaging_limit_tier: undefined }), ["account.tier"]);
 });
@@ -102,4 +103,22 @@ test("the combined report is ok only when everything passes and something can be
   assert.equal(preflight({ ...base, phone: { ...GOOD, quality_rating: "YELLOW" }, rows: [row()] }).ok, false);
   assert.equal(preflight({ ...base, phone: null, rows: [row()] }).ok, false);
   assert.equal(preflight({ ...base, template: null, rows: [row()] }).ok, false);
+});
+
+test("an UNKNOWN-quality number is capped at 50 new recipients per 24 hours", () => {
+  const phones = (n: number, from = 0) => Array.from({ length: n }, (_, i) => `9665${String(from + i).padStart(8, "0")}`);
+  assert.equal(checkCapacity("TIER_250", new Set(), phones(50), 0.2, 50).check.ok, true);
+  const over = checkCapacity("TIER_250", new Set(), phones(51), 0.2, 50);
+  assert.equal(over.check.ok, false);
+  assert.equal(over.limit, 50);
+  assert.equal(checkCapacity("TIER_250", new Set(phones(45, 1000)), phones(6), 0.2, 50).check.ok, false, "earlier sends count");
+  assert.equal(checkCapacity("TIER_50", new Set(), phones(40), 0.2, 50).limit, 40, "a lower tier limit still wins");
+
+  const rows = Array.from({ length: 51 }, (_, i) => row({ phone: `05${String(i).padStart(8, "0")}` }));
+  const base = { template: TPL, language: "ar", now: NOW, optedOut: new Set<string>(), lastMarketingAt: new Map<string, number>(), recent24h: new Set<string>() };
+  const unknown = preflight({ ...base, phone: { ...GOOD, quality_rating: "UNKNOWN" }, rows });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.summary.remainingCapacity, 50);
+  assert.equal(preflight({ ...base, phone: { ...GOOD, quality_rating: "UNKNOWN" }, rows: rows.slice(0, 50) }).ok, true);
+  assert.equal(preflight({ ...base, phone: GOOD, rows }).ok, true, "no cap once GREEN");
 });
