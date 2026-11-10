@@ -152,7 +152,7 @@ export function registerMarketingTools(server: McpServer, { graph, store, cfg }:
     {
       title: "Check a campaign without sending",
       description:
-        "Screens a customer list for a marketing campaign and sends NOTHING. Checks the number (connected, verified, GREEN quality), the template (approved MARKETING, body variables only), the messaging limit, and every recipient (Saudi mobile, consent, opt-out, 7-day cooldown, variable values). Use upload_id from the dashboard upload, or rows for a small list. When everything passes it returns a campaign_id and a confirm_token. Show the person the summary and the blocked rows before going further.",
+        "Screens a customer list for a marketing campaign and sends NOTHING. Checks the number (connected, verified, GREEN quality, or UNKNOWN for a not-yet-rated number with a 50-recipients-a-day cap), the template (approved MARKETING, body variables only), the messaging limit, and every recipient (Saudi mobile, consent, opt-out, 7-day cooldown, variable values). Use upload_id from the dashboard upload, or rows for a small list. When everything passes it returns a campaign_id and a confirm_token. Show the person the summary and the blocked rows before going further.",
       inputSchema: z.object({
         template_name: z.string(),
         language: z.string().default("ar"),
@@ -234,7 +234,7 @@ export function registerMarketingTools(server: McpServer, { graph, store, cfg }:
     {
       title: "Pause, resume or cancel a campaign",
       description:
-        "pause stops a running campaign at its next batch. resume continues a halted one, only if the number's quality is GREEN again, and the breaker then judges only what is sent from there. cancel ends the campaign for good and frees the account for another.",
+        "pause stops a running campaign at its next batch. resume continues a halted one, only if the number's quality is GREEN (or still UNKNOWN), and the breaker then judges only what is sent from there. cancel ends the campaign for good and frees the account for another.",
       inputSchema: z.object({ campaign_id: z.string(), action: z.enum(["pause", "resume", "cancel"]) }),
       annotations: WRITE,
     },

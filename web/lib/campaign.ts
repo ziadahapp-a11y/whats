@@ -10,7 +10,7 @@
 // campaign that has been started with its dry-run token.
 
 import { randomUUID } from "node:crypto";
-import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, type BreakerConfig, type Outcome } from "./breaker";
+import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, qualityAllowsSending, type BreakerConfig, type Outcome } from "./breaker";
 import { GraphError, type Graph } from "./graph";
 import { normalizeSaudiMobile, preflight, type BlockedRow, type PreflightCheck, type PreflightReport, type RecipientRow } from "./preflight";
 import type { Store } from "./store";
@@ -508,7 +508,7 @@ export async function stopCampaign(deps: CampaignDeps, id: string, mode: "pause"
 
 export type ResumeResult = { ok: true; campaign: CampaignView } | { ok: false; error: string };
 
-/** Resumes a halted campaign. The number must be GREEN again; the breaker then judges only what is sent from here on. */
+/** Resumes a halted campaign. The number must be GREEN (or still unrated) again; the breaker then judges only what is sent from here on. */
 export async function resumeCampaign(deps: CampaignDeps, id: string): Promise<ResumeResult> {
   const { graph, store } = deps;
   const c = await load(store, id);
@@ -516,7 +516,7 @@ export async function resumeCampaign(deps: CampaignDeps, id: string): Promise<Re
   if (c.status !== "halted") return { ok: false, error: `Campaign is ${c.status}, not halted.` };
   const info = await settle(() => graph.phoneInfo());
   const quality = (info as any)?.quality_rating;
-  if (quality !== (deps.breaker ?? DEFAULT_BREAKER).requiredQuality) return { ok: false, error: `Number quality is "${quality ?? "unknown"}"; resume only when it is back to GREEN.` };
+  if (!qualityAllowsSending(quality, deps.breaker ?? DEFAULT_BREAKER)) return { ok: false, error: `Number quality is "${quality ?? "unknown"}"; resume only when it is back to GREEN.` };
   const outcomes = (await store.mkGet<Outcome[]>(key(id, ":o"))) ?? [];
   c.status = "running";
   c.evalFrom = outcomes.length;
