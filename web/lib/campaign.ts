@@ -14,6 +14,7 @@ import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, qualityAllowsSen
 import { GraphError, type Graph } from "./graph";
 import { normalizeSaudiMobile, preflight, type BlockedRow, type PreflightCheck, type PreflightReport, type RecipientRow } from "./preflight";
 import type { Store } from "./store";
+import { renderTemplateText } from "./template-text";
 
 export type CampaignDeps = {
   graph: Pick<Graph, "sendMessage" | "phoneInfo" | "getTemplate" | "getTemplateInfo">;
@@ -365,6 +366,9 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
     c.status = "running";
     delete c.resumeAt;
     let quality: string | undefined;
+    // Fetched once per call so the inbox shows the message itself; null falls back to the name.
+    const rawTemplate = await settle(() => graph.getTemplate(c.template.name, c.template.language));
+    const components = (rawTemplate as any)?.components as any[] | undefined;
 
     while (c.status === "running" && c.cursor < c.total && now() < deadline) {
       const stop = await store.mkGet<"pause" | "cancel">(key(id, ":stop"));
@@ -412,7 +416,7 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
                 waId: res.waId ?? r.phone,
                 direction: "out",
                 type: "template",
-                text: `[template ${c.template.name}] ${r.params.join(" | ")}`,
+                text: renderTemplateText(components, r.params) ?? `[template ${c.template.name}] ${r.params.join(" | ")}`.trim(),
                 timestamp: Math.floor(at / 1000),
                 status: "sent",
                 source: "api",

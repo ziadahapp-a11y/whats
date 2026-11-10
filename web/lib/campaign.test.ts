@@ -277,3 +277,11 @@ test("static buttons, including a WhatsApp voice call, need no send-time paramet
   assert.match(unsupportedReason(btns([{ type: "COPY_CODE", text: "x" }]))!, /COPY_CODE/);
   assert.match(unsupportedReason(btns([{ type: "URL", text: "x", url: "https://a.b/{{1}}" }]))!, /variable/);
 });
+
+test("the inbox keeps the rendered message, not just the template name", async () => {
+  const t = setup();
+  const id = await started(t, 1);
+  await advanceCampaign(t.deps, id, fast);
+  const [m] = await t.store.messages(phone(1));
+  assert.equal(m?.text, "هلا عميل1، عرض الصيف لك فقط");
+});
