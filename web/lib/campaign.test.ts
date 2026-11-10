@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, startCampaign, stopCampaign, type CampaignDeps, type DryRunRow } from "./campaign";
+import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, startCampaign, stopCampaign, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
 import { GraphError } from "./graph";
 import { MemoryKV, Store } from "./store";
 
@@ -268,4 +268,12 @@ test("report counts delivery and masks numbers", async () => {
   assert.equal(r.pending, 9);
   assert.deepEqual(r.errors, [{ code: 131026, count: 1, meaning: undefined }]);
   assert.match(r.failureSample[0].phone, /^96650\*{4}\d{3}$/);
+});
+
+test("static buttons, including a WhatsApp voice call, need no send-time parameter", () => {
+  const btns = (buttons: object[]) => [{ type: "BODY", text: "هلا {{1}}" }, { type: "BUTTONS", buttons }];
+  assert.equal(unsupportedReason(btns([{ type: "VOICE_CALL", text: "اتصل" }, { type: "QUICK_REPLY", text: "إيقاف" }])), null);
+  assert.equal(unsupportedReason(btns([{ type: "PHONE_NUMBER", text: "اتصل" }])), null);
+  assert.match(unsupportedReason(btns([{ type: "COPY_CODE", text: "x" }]))!, /COPY_CODE/);
+  assert.match(unsupportedReason(btns([{ type: "URL", text: "x", url: "https://a.b/{{1}}" }]))!, /variable/);
 });

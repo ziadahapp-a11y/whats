@@ -177,7 +177,8 @@ export function unsupportedReason(components: any[]): string | null {
     if (c.type === "HEADER" && /\{\{/.test(c.text ?? "")) return "Template header has a variable, which campaigns do not support yet.";
     if (c.type === "BUTTONS") {
       for (const b of c.buttons ?? []) {
-        if (!["QUICK_REPLY", "PHONE_NUMBER", "URL"].includes(b.type)) return `Template has a ${b.type} button, which campaigns do not support yet.`;
+        // VOICE_CALL (call on WhatsApp) is static like PHONE_NUMBER: it takes no parameter at send time.
+        if (!["QUICK_REPLY", "PHONE_NUMBER", "URL", "VOICE_CALL"].includes(b.type)) return `Template has a ${b.type} button, which campaigns do not support yet.`;
         if (b.type === "URL" && /\{\{/.test(b.url ?? "")) return "Template has a URL button with a variable, which campaigns do not support yet.";
       }
     }
