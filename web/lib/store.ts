@@ -215,20 +215,21 @@ export class Store {
   /** Builds or replaces the summary hash from the stored messages. Run by hand, never inside a request. */
   async rebuildSummary(batch = 100): Promise<number> {
     const waIds = await this.allChats();
-    let rows: Record<string, Summary> = {};
     let n = 0;
-    for (const waId of waIds) {
-      const [name, last, w] = await Promise.all([this.getName(waId), this.lastMessage(waId), this.window(waId)]);
-      rows[waId] = { waId, name, lastAt: last?.timestamp ?? 0, last, lastInboundAt: w.lastInboundAt };
-      if (Object.keys(rows).length >= batch) {
+    // Chats are read in parallel groups, so a few thousand commands finish well inside one request.
+    for (let i = 0; i < waIds.length; i += 25) {
+      const group = waIds.slice(i, i + 25);
+      const built = await Promise.all(
+        group.map(async (waId) => {
+          const [name, last, w] = await Promise.all([this.getName(waId), this.lastMessage(waId), this.window(waId)]);
+          return [waId, { waId, name, lastAt: last?.timestamp ?? 0, last, lastInboundAt: w.lastInboundAt } as Summary] as const;
+        }),
+      );
+      for (let j = 0; j < built.length; j += batch) {
+        const rows = Object.fromEntries(built.slice(j, j + batch));
         await this.kv.hset(`${this.p}sum`, rows);
         n += Object.keys(rows).length;
-        rows = {};
       }
-    }
-    if (Object.keys(rows).length) {
-      await this.kv.hset(`${this.p}sum`, rows);
-      n += Object.keys(rows).length;
     }
     await this.kv.set(`${this.p}sum:ok`, 1);
     return n;
