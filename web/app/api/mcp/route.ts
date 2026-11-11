@@ -4,6 +4,7 @@ import { personal, runtime } from "@/lib/runtime";
 import { registerMarketingTools } from "@/lib/marketing-tools";
 import { registerTools } from "@/lib/tools";
 import { OFFICIAL } from "@/lib/wa/accounts";
+import { tracedServer } from "@/lib/toollog";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -21,8 +22,8 @@ const handler = (canSend: boolean) =>
   createMcpHandler(
     (server) => {
       const { cfg, graph, store } = runtime();
-      registerTools(server, { graph, store, canSend });
-      if (canSend) registerMarketingTools(server, { graph, store, cfg });
+      registerTools(tracedServer(server, "official"), { graph, store, canSend });
+      if (canSend) registerMarketingTools(tracedServer(server, "official"), { graph, store, cfg });
     },
     { serverInfo: { name: "whats-mcp-cloud", version: "1.0.0" }, instructions: canSend ? INSTRUCTIONS : INSTRUCTIONS + READ_ONLY },
   );

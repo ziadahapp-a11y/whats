@@ -1,4 +1,5 @@
 import { createMcpHandler } from "mcp-handler";
+import { tracedServer } from "@/lib/toollog";
 import { authenticate, canUse } from "@/lib/access";
 import { personal } from "@/lib/runtime";
 import { listAccounts } from "@/lib/wa/accounts";
@@ -39,7 +40,7 @@ async function guarded(req: Request) {
   const entries: Entry[] = allowed.map((a) => ({ id: a.id, label: a.label, deps: account(a.id) }));
   const canSend = p.scope === "full";
   const handler = createMcpHandler(
-    (server) => registerPersonalTools(server, { base, accounts: entries, canSend }),
+    (server) => registerPersonalTools(tracedServer(server, "personal"), { base, accounts: entries, canSend }),
     { serverInfo: { name: "whats-mcp-personal", version: "1.1.0" }, instructions: instructions(entries, canSend) },
   );
   return handler(req);
