@@ -9,6 +9,23 @@ export interface RawKV {
   set(key: string, value: string, opts?: { ex?: number; nx?: boolean }): Promise<unknown>;
   del(...keys: string[]): Promise<unknown>;
   keys?(pattern: string): Promise<string[]>;
+  /** Incremental key scan (SCAN). Preferred over keys on Redis: KEYS scans the whole keyspace in one call. */
+  scan?(cursor: string, opts: { match: string; count?: number }): Promise<[string, string[]]>;
+}
+
+/** Every key matching pattern. Uses SCAN when the store has it, otherwise KEYS, otherwise nothing. */
+export async function scanKeys(kv: RawKV, pattern: string): Promise<string[]> {
+  if (kv.scan) {
+    const out: string[] = [];
+    let cursor = "0";
+    do {
+      const [next, keys] = await kv.scan(cursor, { match: pattern, count: 1000 });
+      out.push(...keys);
+      cursor = String(next);
+    } while (cursor !== "0");
+    return [...new Set(out)];
+  }
+  return kv.keys ? kv.keys(pattern) : [];
 }
 
 export class MemoryRawKV implements RawKV {
@@ -94,7 +111,8 @@ export async function redisAuthState(kv: RawKV): Promise<{ state: Authentication
 
 /** Forgets the linked device (after logout or to re-pair). */
 export async function clearAuth(kv: RawKV) {
-  const keys = kv.keys ? await kv.keys(P + "*") : [P + "creds"];
+  const keys = await scanKeys(kv, P + "*");
+  if (!keys.length) keys.push(P + "creds");
   for (let i = 0; i < keys.length; i += 500) await kv.del(...keys.slice(i, i + 500));
 }
 
