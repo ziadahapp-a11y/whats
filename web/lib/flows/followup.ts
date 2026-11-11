@@ -3,7 +3,7 @@
 // the team ended the exchange and decides what comes next, so the reminder still lands inside the 24-hour window.
 
 import type { RawKV } from "../wa/auth";
-import type { Store } from "../store";
+import type { Conversation, Store } from "../store";
 import type { Channel } from "./engine";
 
 export const FOLLOWUP_TEXT = "حياك الله، ننتظر ردك عشان نكمل معك";
@@ -14,8 +14,8 @@ const LATEST = 23.5 * 3600;
 /** Our last message ended the exchange (handoff, opt-out, thanks), so the merchant owes no reply. */
 const CLOSED = /جاري تحويلك للفريق|تم إيقاف الرسائل|سعدنا بخدمتك|ننتظر ردك عشان نكمل معك|موعدنا|حاضرين لأي|العفو|وصلتنا رسالتكم|مالك إلا اللي يرضيك/;
 
-export async function sendFollowups(d: { store: Store; state: RawKV; channel: Channel }, now = Math.floor(Date.now() / 1000), scan = 200): Promise<string[]> {
-  const convs = await d.store.activeSince(now - 24 * 3600, scan, now);
+export async function sendFollowups(d: { store: Store; state: RawKV; channel: Channel; convs?: Conversation[] }, now = Math.floor(Date.now() / 1000), scan = 200): Promise<string[]> {
+  const convs = d.convs ?? (await d.store.conversations(scan, undefined, now));
   const due = convs.filter((c) => {
     const age = c.lastInboundAt ? now - c.lastInboundAt : -1;
     return age >= FOLLOWUP_AFTER && age < LATEST && c.last?.direction === "out" && c.last.source !== "business_app" && !CLOSED.test(c.last.text ?? "");

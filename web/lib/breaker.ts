@@ -37,18 +37,11 @@ export type BreakerConfig = {
   maxFailureRate: number;
   /** The failure rate is ignored below this many attempts, so one early failure cannot stop a campaign. */
   minAttempts: number;
-  /** Anything else than this quality rating halts... */
+  /** Anything else than this quality rating halts. */
   requiredQuality: string;
-  /** ...except this one: a new number Meta has not rated yet. Preflight caps such a campaign at UNKNOWN_QUALITY_DAILY_CAP. */
-  probationQuality?: string;
 };
 
-export const DEFAULT_BREAKER: BreakerConfig = { maxFailureRate: 0.05, minAttempts: 20, requiredQuality: "GREEN", probationQuality: "UNKNOWN" };
-
-/** True when the number may send: GREEN, or not yet rated (UNKNOWN). A missing rating still blocks. */
-export function qualityAllowsSending(quality: string | undefined, cfg: BreakerConfig = DEFAULT_BREAKER): boolean {
-  return quality !== undefined && (quality === cfg.requiredQuality || (!!cfg.probationQuality && quality === cfg.probationQuality));
-}
+export const DEFAULT_BREAKER: BreakerConfig = { maxFailureRate: 0.05, minAttempts: 20, requiredQuality: "GREEN" };
 
 export type Verdict = { halt: false } | { halt: true; reason: string; code?: number };
 
@@ -59,7 +52,7 @@ export function parseErrorCode(error: string | undefined): number | undefined {
 }
 
 export function evaluate(outcomes: readonly Outcome[], quality: string | undefined, cfg: BreakerConfig = DEFAULT_BREAKER): Verdict {
-  if (!qualityAllowsSending(quality, cfg)) {
+  if (quality !== cfg.requiredQuality) {
     return { halt: true, reason: `Number quality rating is "${quality ?? "unknown"}", not ${cfg.requiredQuality}.` };
   }
   for (const o of outcomes) {

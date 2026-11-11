@@ -151,22 +151,6 @@ export class Store {
       .map((waId, i) => ({ waId, name: names[i] == null ? undefined : String(names[i]) }))
       .filter((c) => !q || c.waId.includes(q) || (c.name ?? "").toLowerCase().includes(q))
       .slice(0, limit);
-    return this.describe(picked, now);
-  }
-
-  /**
-   * Chats with a message at or after `since` (unix seconds), most recent first. The background work
-   * (catch-up, follow-ups) only cares about chats whose 24-hour window can still be open, so it reads
-   * these few instead of the last few hundred chats: each chat costs three Redis calls.
-   */
-  async activeSince(since: number, limit = 200, now = Math.floor(Date.now() / 1000)): Promise<Conversation[]> {
-    const waIds = (await this.kv.zrange<unknown[]>(`${this.p}convs`, since, "+inf", { byScore: true })).map(String).reverse().slice(0, limit);
-    if (!waIds.length) return [];
-    const names = await this.kv.mget<unknown[]>(...waIds.map((id) => `${this.p}n:${id}`));
-    return this.describe(waIds.map((waId, i) => ({ waId, name: names[i] == null ? undefined : String(names[i]) })), now);
-  }
-
-  private describe(picked: { waId: string; name?: string }[], now: number): Promise<Conversation[]> {
     return Promise.all(
       picked.map(async ({ waId, name }) => {
         const [last, w] = await Promise.all([this.lastMessage(waId), this.window(waId, now)]);

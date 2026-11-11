@@ -10,7 +10,7 @@ export const maxDuration = 120;
 function instructions(entries: Entry[], canSend: boolean) {
   return [
     "This server is the user's own WhatsApp, linked as a device and reached on demand.",
-    "- Read tools answer from a cache and sync automatically when it is older than 2 minutes; each sync takes a few seconds.",
+    "- Read tools answer from a cache and sync automatically when it is older than 10 minutes; each sync takes a few seconds.",
     entries.length > 1
       ? `- Several numbers are available (${entries.map((e) => `${e.id} = ${e.label}`).join(", ")}). Pass \`account\` to choose; sending requires it.`
       : "",

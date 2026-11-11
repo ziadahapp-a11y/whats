@@ -38,7 +38,7 @@ const chatArg = z
 
 const accountArg = z.string().optional().describe("which WhatsApp number to use: an id from list_accounts. Optional when only one number is available");
 
-const STALE_SECONDS = 120;
+const STALE_SECONDS = 600; // each sync is a full WhatsApp connection: thousands of Redis calls for its keys
 
 function line(m: StoredMessage, chatName?: string) {
   const when = new Date(m.timestamp * 1000).toISOString().replace("T", " ").slice(0, 16);
@@ -124,7 +124,7 @@ export function registerPersonalTools(server: McpServer, ctx: PersonalCtx) {
     {
       title: "Sync now",
       description:
-        "Connect to WhatsApp briefly to collect every message that arrived since the last sync, then disconnect (this also runs your automation flows). Takes about 5–20 seconds. Read tools already sync automatically when the cache is older than 2 minutes. Returns how many messages were added.",
+        "Connect to WhatsApp briefly to collect every message that arrived since the last sync, then disconnect (this also runs your automation flows). Takes about 5–20 seconds. Read tools already sync automatically when the cache is older than 10 minutes. Returns how many messages were added.",
       inputSchema: z.object({ account: accountArg }),
       annotations: { ...READ, idempotentHint: false },
     },
@@ -145,7 +145,7 @@ export function registerPersonalTools(server: McpServer, ctx: PersonalCtx) {
     {
       title: "List chats",
       description:
-        "List cached chats (people and groups), most recent first, with name and last message. Syncs first when the cache is older than 2 minutes. Read-only. Use list_messages to read one chat. Returns JSON [{waId (the chat JID), name, lastAt, last}].",
+        "List cached chats (people and groups), most recent first, with name and last message. Syncs first when the cache is older than 10 minutes. Read-only. Use list_messages to read one chat. Returns JSON [{waId (the chat JID), name, lastAt, last}].",
       inputSchema: z.object({
         account: accountArg,
         query: z.string().optional().describe("filter by name or number"),
@@ -168,7 +168,7 @@ export function registerPersonalTools(server: McpServer, ctx: PersonalCtx) {
     {
       title: "Read a chat",
       description:
-        "Read the cached messages of one chat, oldest first. Syncs first when the cache is older than 2 minutes. History older than the moment you linked is only present if WhatsApp sent it during linking. Read-only. Returns one line per message with its id for replies and reactions.",
+        "Read the cached messages of one chat, oldest first. Syncs first when the cache is older than 10 minutes. History older than the moment you linked is only present if WhatsApp sent it during linking. Read-only. Returns one line per message with its id for replies and reactions.",
       inputSchema: z.object({
         account: accountArg,
         chat: chatArg,

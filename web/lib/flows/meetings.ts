@@ -116,6 +116,7 @@ ${list}`;
   };
 }
 
+const EMAIL_INDEX = "meet:email-index";
 const EMAILS = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 // links and bare domains, but not the domain of an email address
 const SITES = /(?<![@\w.-])(?:https?:\/\/)?(?:[a-z0-9-]+\.)+[a-z]{2,}(?:\/[^\s<>"'\]]*)?/gi;
@@ -158,10 +159,13 @@ export function phonesIn(text: string): string[] {
 /** The WhatsApp chat a calendar event belongs to: Zaid's own tag, a phone in the booking details, or a guest email the merchant wrote in a chat. */
 export class ChatMatcher {
   private emails?: Map<string, string>;
-  constructor(private store: Store, private scan = 100) {}
+  /** `cache` keeps the email index for 30 minutes: building it reads 100 chats (about 500 Redis calls) */
+  constructor(private store: Store, private scan = 100, private cache?: RawKV) {}
 
   private async emailIndex() {
     if (this.emails) return this.emails;
+    const saved = await this.cache?.get(EMAIL_INDEX).catch(() => null);
+    if (saved) return (this.emails = new Map(JSON.parse(saved) as [string, string][]));
     const map = new Map<string, string>();
     for (const c of await this.store.conversations(this.scan)) {
       for (const m of await this.store.messages(c.waId, 60)) {
@@ -169,6 +173,7 @@ export class ChatMatcher {
         for (const e of `${m.text ?? ""}`.match(EMAILS) ?? []) if (!map.has(e.toLowerCase())) map.set(e.toLowerCase(), c.waId);
       }
     }
+    await this.cache?.set(EMAIL_INDEX, JSON.stringify([...map]), { ex: 1800 }).catch(() => null);
     return (this.emails = map);
   }
 
@@ -219,7 +224,7 @@ export const REMIND_MINUTES = 45;
 export async function sendMeetingReminders(d: Deps, now = Date.now(), cal = new Calendar(d.base)): Promise<string[]> {
   if (!(await connection(d.base)).connected) return [];
   const s = await getSettings(d.base);
-  const match = new ChatMatcher(d.store);
+  const match = new ChatMatcher(d.store, 100, d.state);
   const sent: string[] = [];
   const send = async (chat: string, text: string) => {
     try {
@@ -235,12 +240,7 @@ export async function sendMeetingReminders(d: Deps, now = Date.now(), cal = new 
     const fresh = !ev.chat && !!ev.created && now - ev.created < 2 * 86400000;
     const due = ev.start - now <= REMIND_MINUTES * 60000;
     if (!fresh && !due) continue;
-    // already confirmed and reminded: nothing left to send, so no chat lookup (it can read 100 chats)
-    if ((!fresh || (await d.state.get(`mc:${ev.id}`))) && (!due || (await d.state.get(`mr:${ev.id}`)))) continue;
-    // the lookup is kept (30 minutes when found, 10 when not): an unmatched event used to rescan every chat on every wake-up
-    const known = await d.state.get(`mx:${ev.id}`);
-    const chat = known !== null ? known || undefined : await match.chatFor(ev);
-    if (known === null) await d.state.set(`mx:${ev.id}`, chat ?? "", { ex: chat ? 1800 : 600 });
+    const chat = await match.chatFor(ev);
     if (!chat || !(await d.store.window(chat, Math.floor(now / 1000))).windowOpen) continue;
     if (fresh && (await d.state.set(`mc:${ev.id}`, "1", { ex: 30 * 86400, nx: true }))) {
       // a confirmation this close to the start already says when; no separate reminder after it

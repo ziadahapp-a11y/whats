@@ -237,8 +237,7 @@ function App({ secret }: { secret: string }) {
           ) : (
             <p className="err">ما قدرنا نقرأ حالة الرقم من Meta: {n?.error}. تأكد من WHATSAPP_ACCESS_TOKEN و WHATSAPP_PHONE_NUMBER_ID.</p>
           )}
-          {n?.ok && n.quality_rating === "UNKNOWN" && <p className="hint">الرقم ما انقيّم من Meta للحين، فالحملات تشتغل بحد 50 مستلم كل 24 ساعة لين تصير الجودة GREEN، وتوقف تلقائي لو صارت YELLOW أو RED.</p>}
-          {n?.ok && n.quality_rating !== "GREEN" && n.quality_rating !== "UNKNOWN" && <p className="hint">الحملات ما تشتغل إلا والجودة GREEN، أو UNKNOWN لرقم جديد بحد 50 في اليوم.</p>}
+          {n?.ok && n.quality_rating !== "GREEN" && <p className="hint">الحملات ما تشتغل إلا والجودة GREEN.</p>}
         </section>
       )}
 
@@ -261,7 +260,7 @@ function App({ secret }: { secret: string }) {
               <button className="btn ghost" disabled={busy === "ctl"} onClick={() => run("ctl", async () => { setDriving(false); setActive(await post<View>({ op: "control", id: current.id, action: "pause" })); await refresh(); })}>إيقاف مؤقت</button>
             )}
             {current.status === "halted" && (
-              <button className="btn solid" disabled={busy === "ctl"} onClick={() => confirm("نكمل الحملة؟ تأكد إنك فهمت سبب التوقف وإن جودة الرقم GREEN (أو UNKNOWN لرقم جديد).") && run("ctl", async () => { setActive(await post<View>({ op: "control", id: current.id, action: "resume" })); await refresh(); }, "رجعت الحملة للعمل. اضغط تابع الإرسال.")}>استئناف</button>
+              <button className="btn solid" disabled={busy === "ctl"} onClick={() => confirm("نكمل الحملة؟ تأكد إنك فهمت سبب التوقف وإن جودة الرقم رجعت GREEN.") && run("ctl", async () => { setActive(await post<View>({ op: "control", id: current.id, action: "resume" })); await refresh(); }, "رجعت الحملة للعمل. اضغط تابع الإرسال.")}>استئناف</button>
             )}
             <button className="btn ghost" disabled={busy === "report"} onClick={() => void loadReport(current.id)}>تقرير التسليم</button>
             {LIVE.includes(current.status) && (
