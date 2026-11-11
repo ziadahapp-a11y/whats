@@ -59,6 +59,7 @@ type OptOut = { at: number; reason: string; active: boolean };
 const MGET_CHUNK = 500;
 const WINDOW_SECONDS = 24 * 60 * 60;
 const PER_CHAT_CAP = 50_000;
+const TRIM_CHANCE = 0.05; // about one write in twenty trims a chat's message list
 const TTL_SECONDS = 3 * 365 * 24 * 60 * 60; // keep message bodies for 3 years
 
 export class Store {
@@ -74,23 +75,26 @@ export class Store {
     const merged = existing ? { ...m, status: existing.status ?? m.status, error: existing.error ?? m.error } : m;
     await this.kv.set(`${this.p}m:${m.id}`, merged, { ex: TTL_SECONDS });
     await this.kv.zadd(`${this.p}c:${m.waId}`, { score: m.timestamp, member: m.id });
-    await this.kv.zremrangebyrank(`${this.p}c:${m.waId}`, 0, -(PER_CHAT_CAP + 1));
+    // Trimming is cheap to skip: a chat only grows past the cap by a few messages before a later write trims it.
+    if (Math.random() < TRIM_CHANCE) await this.kv.zremrangebyrank(`${this.p}c:${m.waId}`, 0, -(PER_CHAT_CAP + 1));
+
+    // The summary row already holds the newest and last-inbound times, so the chat's own keys are read only when no row exists yet.
+    const prev = await this.kv.hget<Summary>(`${this.p}sum`, m.waId);
+    const lastAt = prev ? prev.lastAt : ((await this.kv.get<number>(`${this.p}cl:${m.waId}`)) ?? 0);
     // Older messages (history backfill) must never push a chat down the list.
-    const lastAt = (await this.kv.get<number>(`${this.p}cl:${m.waId}`)) ?? 0;
     if (m.timestamp >= lastAt) {
-      await this.kv.set(`${this.p}cl:${m.waId}`, m.timestamp);
+      if (!prev) await this.kv.set(`${this.p}cl:${m.waId}`, m.timestamp);
       await this.kv.zadd(`${this.p}convs`, { score: m.timestamp, member: m.waId });
     }
     if (m.direction === "in") {
-      const prev = (await this.kv.get<number>(`${this.p}in:${m.waId}`)) ?? 0;
-      if (m.timestamp > prev) await this.kv.set(`${this.p}in:${m.waId}`, m.timestamp);
+      const knownIn = prev ? (prev.lastInboundAt ?? 0) : ((await this.kv.get<number>(`${this.p}in:${m.waId}`)) ?? 0);
+      if (m.timestamp > knownIn) await this.kv.set(`${this.p}in:${m.waId}`, m.timestamp);
     }
-    await this.touchSummary(m);
+    await this.touchSummary(m, prev);
   }
 
   /** Keeps one summary row per chat in the "sum" hash, so the chat list is one read instead of several per chat. */
-  private async touchSummary(m: StoredMessage) {
-    const prev = await this.kv.hget<Summary>(`${this.p}sum`, m.waId);
+  private async touchSummary(m: StoredMessage, prev: Summary | null) {
     // A brand-new row takes its name from the name key, so it is not lost before the chat is named.
     const name = prev ? prev.name : (await this.kv.get<string>(`${this.p}n:${m.waId}`)) ?? undefined;
     const base: Summary = prev ?? { waId: m.waId, lastAt: 0 };
