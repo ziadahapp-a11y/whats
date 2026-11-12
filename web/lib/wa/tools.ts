@@ -38,7 +38,7 @@ const chatArg = z
 
 const accountArg = z.string().optional().describe("which WhatsApp number to use: an id from list_accounts. Optional when only one number is available");
 
-const STALE_SECONDS = 600; // each sync is a full WhatsApp connection: thousands of Redis calls for its keys
+const STALE_SECONDS = 1800; // each sync is a full WhatsApp connection: thousands of Redis calls for its keys
 
 function line(m: StoredMessage, chatName?: string) {
   const when = new Date(m.timestamp * 1000).toISOString().replace("T", " ").slice(0, 16);

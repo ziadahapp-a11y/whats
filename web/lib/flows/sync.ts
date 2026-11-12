@@ -20,7 +20,7 @@ import { meetings, sendMeetingReminders } from "./meetings";
 import type { StoredMessage } from "../store";
 
 /** how often the official number re-reads all chats for catch-ups, follow-ups and meeting reminders */
-export const HOUSEKEEP_SECS = 300;
+export const HOUSEKEEP_SECS = 1800;
 
 const num = (v: string | undefined, fallback: number) => (v && Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : fallback);
 
@@ -118,7 +118,7 @@ export async function runOfficialFlows(fresh: StoredMessage[], io: OfficialIO) {
   const logs = await runFlows(deps, fresh);
   // The housekeeping below reads every recent chat (over a thousand Redis calls), so it runs at most once
   // every HOUSEKEEP_SECS whatever wakes us: a message, a delivery receipt or the cron ping. Nothing in it is
-  // more urgent than that: unanswered chats wait 10 minutes, follow-ups 20 hours, reminders 45 minutes.
+  // more urgent than that: unanswered chats wait up to 30 minutes, follow-ups 20 hours, reminders 45 minutes.
   if (!(await io.state.set("housekeep", "1", { ex: HOUSEKEEP_SECS, nx: true }))) return logs;
   // one read of the chats, shared by the catch-up and the follow-ups
   const convs = await io.store.conversations(200).catch((e) => (console.error("chat list failed", e), undefined));
