@@ -56,9 +56,9 @@ function App({ secret, status }: { secret: string; status: Status }) {
   }, [q]);
 
   // Cached and polled gently: the cache refreshes whenever a sync, flow or MCP call stores something.
-  const chatsApi = useApi<{ chats: Chat[]; accounts: Account[]; kind: "personal" | "official" }>(`/api/personal/inbox?account=${account}&q=${encodeURIComponent(dq)}`, { fresh: 30_000, poll: 60_000 });
-  const draftsApi = useApi<{ drafts: Draft[] }>("/api/personal/drafts", { poll: 60_000 });
-  const threadApi = useApi<Thread>(active ? `/api/personal/inbox?account=${account}&view=messages&chat=${encodeURIComponent(active)}` : null, { fresh: 15_000, poll: 60_000 });
+  const chatsApi = useApi<{ chats: Chat[]; accounts: Account[]; kind: "personal" | "official" }>(`/api/personal/inbox?account=${account}&q=${encodeURIComponent(dq)}`, { fresh: 10_000, poll: 20_000 });
+  const draftsApi = useApi<{ drafts: Draft[] }>("/api/personal/drafts", { poll: 20_000 });
+  const threadApi = useApi<Thread>(active ? `/api/personal/inbox?account=${account}&view=messages&chat=${encodeURIComponent(active)}` : null, { fresh: 5_000, poll: 20_000 });
   const chats = chatsApi.data?.chats ?? [];
   const accounts = chatsApi.data?.accounts ?? status.accounts.map((a): Account => ({ id: a.id, label: a.label, kind: "personal" }));
   const kind = chatsApi.data?.kind ?? "personal";

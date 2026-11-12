@@ -77,7 +77,7 @@ export function Campaigns() {
 const emptyDraft = { name: "", language: "ar", category: "MARKETING" as "MARKETING" | "UTILITY", header: "", body: "", examples: [] as string[], footer: "", optOut: true, urlText: "", url: "", urlExample: "" };
 
 function App({ secret }: { secret: string }) {
-  const overview = useApi<Overview>("/api/personal/campaigns", { fresh: 30_000, poll: 120_000 });
+  const overview = useApi<Overview>("/api/personal/campaigns", { fresh: 10_000, poll: 30_000 });
   const data = overview.data;
   const post = <T = any,>(body: unknown) => call<T>(secret, "/api/personal/campaigns", { body });
 

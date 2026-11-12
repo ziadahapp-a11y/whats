@@ -102,7 +102,7 @@ function Shell({ status, children }: { status: Status; children: ReactNode }) {
     }
   });
   // same request and cache as the inbox, so the bell costs nothing extra
-  const drafts = useApi<{ drafts: unknown[] }>("/api/personal/drafts", { poll: 120_000 });
+  const drafts = useApi<{ drafts: unknown[] }>("/api/personal/drafts", { poll: 30_000 });
   const pending = drafts.data?.drafts?.length ?? 0;
 
   const paired = status.accounts.filter((a) => a.paired).length;

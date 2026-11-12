@@ -33,7 +33,7 @@ const until = (ms: number) => {
 };
 
 export function Overview() {
-  const api = useApi<Resp>("/api/personal/overview", { fresh: 60_000, poll: 120_000 });
+  const api = useApi<Resp>("/api/personal/overview", { fresh: 20_000, poll: 30_000 });
   const { secret, status } = useSession();
   const who = status.accounts.find((a) => a.paired);
   const [cancelling, setCancelling] = useState("");
