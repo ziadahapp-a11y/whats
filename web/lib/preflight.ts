@@ -132,9 +132,18 @@ export function normalizeSaudiMobile(input: unknown): string | null {
   if (s.startsWith("+")) s = s.slice(1);
   if (!/^\d+$/.test(s)) return null;
   if (s.startsWith("00")) s = s.slice(2);
-  if (s.startsWith("966")) s = s.slice(3);
-  if (s.startsWith("0")) s = s.slice(1);
-  return /^5\d{8}$/.test(s) ? `966${s}` : null;
+  // Saudi numbers: 966 5xxxxxxxx, 05xxxxxxxx, or 5xxxxxxxx.
+  if (s.startsWith("966")) {
+    const rest = s.slice(3).replace(/^0/, "");
+    return /^5\d{8}$/.test(rest) ? `966${rest}` : null;
+  }
+  if (s.startsWith("0")) {
+    const rest = s.slice(1);
+    return /^5\d{8}$/.test(rest) ? `966${rest}` : null;
+  }
+  if (/^5\d{8}$/.test(s)) return `966${s}`;
+  // Any other number must start with its country code (no leading 0), 8 to 15 digits in total.
+  return /^[1-9]\d{7,14}$/.test(s) ? s : null;
 }
 
 export type RecipientRow = {

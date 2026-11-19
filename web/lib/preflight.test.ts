@@ -13,9 +13,17 @@ test("Saudi mobile numbers in every spelling normalise to 9665xxxxxxxx", () => {
   for (const ok of ["0501234567", "501234567", "+966 50 123 4567", "00966501234567", "٠٥٠١٢٣٤٥٦٧", "۰۵۰۱۲۳۴۵۶۷", "966501234567.0", "9660501234567", 501234567, "(050) 123-4567"]) {
     assert.equal(normalizeSaudiMobile(ok), "966501234567", String(ok));
   }
-  for (const bad of ["0412345678", "+14155550123", "abc", "", "05012345", "96650123456789", null, undefined, {}]) {
+  for (const bad of ["0412345678", "abc", "", "05012345", "96650123456789", "0501234567890", "1234567", null, undefined, {}]) {
     assert.equal(normalizeSaudiMobile(bad), null, String(bad));
   }
+});
+
+test("international numbers that start with their country code are accepted", () => {
+  assert.equal(normalizeSaudiMobile("+14155550123"), "14155550123");
+  assert.equal(normalizeSaudiMobile("00201001234567"), "201001234567");
+  assert.equal(normalizeSaudiMobile("971501234567"), "971501234567");
+  assert.equal(normalizeSaudiMobile("+44 7911 123456"), "447911123456");
+  assert.equal(normalizeSaudiMobile("+1 (415) 555-0123"), "14155550123");
 });
 
 test("account checks fail closed", () => {
@@ -60,15 +68,16 @@ test("every recipient rule blocks with its own reason", () => {
       row({ phone: "0500000010", params: ["a\nb"] }), // 11 newline
       row({ phone: "0500000011", params: ["a    b"] }), // 12 four spaces
       row({ phone: "0500000012", params: ["  "] }), // 13 blank value
-      row({ phone: "+14155550123" }), // 14 not Saudi
+      row({ phone: "+14155550123" }), // 14 foreign number with country code, accepted
       row({ phone: "0500000013", consentAt: "2020-01-01" }), // 15 old consent is fine, there is no age limit
+      row({ phone: "0412345678" }), // 16 local number without a valid Saudi prefix
     ],
     c,
   );
-  assert.deepEqual(accepted.map((a) => a.phone), ["966500000001", "966500000008", "966500000013"]);
+  assert.deepEqual(accepted.map((a) => a.phone), ["966500000001", "966500000008", "14155550123", "966500000013"]);
   assert.deepEqual(
     blocked.map((b) => [b.row, b.reason]),
-    [[2, "duplicate"], [3, "opted_out"], [4, "cooldown"], [5, "no_consent_source"], [6, "no_consent_date"], [7, "invalid_consent_date"], [8, "future_consent_date"], [10, "missing_param"], [11, "bad_param"], [12, "bad_param"], [13, "missing_param"], [14, "invalid_phone"]],
+    [[2, "duplicate"], [3, "opted_out"], [4, "cooldown"], [5, "no_consent_source"], [6, "no_consent_date"], [7, "invalid_consent_date"], [8, "future_consent_date"], [10, "missing_param"], [11, "bad_param"], [12, "bad_param"], [13, "missing_param"], [16, "invalid_phone"]],
   );
 });
 
