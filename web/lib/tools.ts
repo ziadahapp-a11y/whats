@@ -4,7 +4,6 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/server";
 import { Graph, GraphError, normalizePhone } from "./graph";
 import type { Store, StoredMessage } from "./store";
-import { renderTemplateText } from "./template-text";
 
 /** canSend: false registers the read tools only, for read-only keys. */
 type Deps = { graph: Graph; store: Store; canSend?: boolean };
@@ -280,9 +279,7 @@ export function registerTools(server: McpServer, { graph, store, canSend = true 
             ...(body_params.length ? [{ type: "body", parameters: body_params.map((t) => ({ type: "text", text: t })) }] : []),
           ];
         const res = await graph.sendMessage(to, { type: "template", template: { name, language: { code: language }, ...(comps.length ? { components: comps } : {}) } });
-        const raw = components ? null : await graph.getTemplate(name, language).catch(() => null);
-        const text = renderTemplateText(raw?.components, body_params, header_params) ?? `[template ${name}] ${body_params.join(" | ")}`.trim();
-        await recordOutgoing(to, res, { type: "template", text });
+        await recordOutgoing(to, res, { type: "template", text: `[template ${name}] ${body_params.join(" | ")}`.trim() });
         return json({ sent: true, message_id: res.messageId });
       } catch (e) {
         return fail(describeError(e));

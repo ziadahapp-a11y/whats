@@ -853,15 +853,15 @@ test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to
   const cal: any = { busy: async () => [], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end, meet: "https://meet.google.com/abc-defg-hij" }) };
   const m = meetings(base, undefined, () => now, cal);
   const ctx = await m.context();
-  assert.match(ctx, /\[2026-10-29T10:45\]/);
-  const out = await m.apply("تمام أبشر [[BOOK 2026-10-29T10:45 sara@shop.sa]]", "966500000001", "Sara");
+  assert.match(ctx, /\[2026-10-29T14:30\]/);
+  const out = await m.apply("تمام أبشر [[BOOK 2026-10-29T14:30 sara@shop.sa]]", "966500000001", "Sara");
   assert.equal(booked.length, 1);
   assert.equal(booked[0].email, "sara@shop.sa");
-  assert.equal(booked[0].start, Date.UTC(2026, 9, 29, 7, 45));
+  assert.equal(booked[0].start, Date.UTC(2026, 9, 29, 11, 30));
   assert.match(out, /^تم حجز موعدنا .+ بإذن الله، ووصلتك دعوة على sara@shop\.sa\.\n\[دخول الاجتماع\]\(https:\/\/meet\.google\.com\/abc-defg-hij\)$/);
   assert.ok(!out.includes("[[BOOK"));
   assert.ok((await m.apply("[[BOOK 2026-10-29T10:35 sara@shop.sa]]", "966500000001")).endsWith(HANDOFF));
-  assert.ok((await m.apply("[[BOOK 2026-10-29T10:45 not-an-email]]", "966500000001")).endsWith(HANDOFF));
+  assert.ok((await m.apply("[[BOOK 2026-10-29T14:30 not-an-email]]", "966500000001")).endsWith(HANDOFF));
   assert.equal(booked.length, 1);
   assert.equal(await m.apply("بدون حجز", "966500000001"), "بدون حجز");
   assert.equal(await meetings(new MemoryRawKV(), undefined, () => now, cal).context(), "");
@@ -883,14 +883,14 @@ test("the merchant's store link goes into the meeting details", async () => {
   const booked: any[] = [];
   const cal: any = { busy: async () => [], events: async () => [], book: async (o: any) => (booked.push(o), { id: "e" + booked.length, start: o.start, end: o.end }) };
   const m = meetings(base, store, () => now, cal);
-  await m.apply("[[BOOK 2026-10-29T10:45 sara@shop.sa https://sara.store]]", "966500000001");
+  await m.apply("[[BOOK 2026-10-29T14:30 sara@shop.sa https://sara.store]]", "966500000001");
   assert.equal(booked[0].store, "https://sara.store");
   // no link in the marker: the last store link the merchant wrote, never the domain of their email
   await store.saveMessage({ id: "s1", waId: "966500000002", direction: "in", type: "text", text: "متجري albaraka.sa", timestamp: now / 1000 - 60 });
   await store.saveMessage({ id: "s2", waId: "966500000002", direction: "in", type: "text", text: "Wmsb1@hotmail.com", timestamp: now / 1000 });
-  await m.apply("[[BOOK 2026-10-29T11:30 wmsb1@hotmail.com]]", "966500000002");
+  await m.apply("[[BOOK 2026-10-29T15:30 wmsb1@hotmail.com]]", "966500000002");
   assert.equal(booked[1].store, "https://albaraka.sa");
-  await m.apply("[[BOOK 2026-11-01T10:00 x@y.sa]]", "966500000003");
+  await m.apply("[[BOOK 2026-11-02T14:30 x@y.sa]]", "966500000003");
   assert.equal(booked[2].store, undefined);
 });
 
@@ -910,7 +910,7 @@ test("a merchant who already has a meeting gets its time and link, never a secon
   const ctx = await m.context("966545432944", "أبو صلاح (متجر البركة )");
   assert.match(ctx, /already has a meeting/);
   assert.ok(!ctx.includes("Free times"));
-  const out = await m.apply("تمام [[BOOK 2026-10-29T10:45 wmsb1@hotmail.com]]", "966545432944", "أبو صلاح (متجر البركة )");
+  const out = await m.apply("تمام [[BOOK 2026-10-29T14:30 wmsb1@hotmail.com]]", "966545432944", "أبو صلاح (متجر البركة )");
   assert.equal(booked.length, 0);
   assert.match(out, /^موعدنا محجوز لك من قبل .+ بإذن الله، والفريق بيرسل لك رابط الاجتماع قبل الموعد$/);
   // another honey store does not match on the shared word
@@ -918,7 +918,7 @@ test("a merchant who already has a meeting gets its time and link, never a secon
   // a Zaid booking with the merchant's email, found by the guest email they wrote in the chat
   await store.saveMessage({ id: "i1", waId: "966500000007", direction: "in", type: "text", text: "Sara@Shop.sa", timestamp: now / 1000 });
   cal.events = async () => [{ id: "z1", start, end: start + 1800000, emails: ["sara@shop.sa"], meet: "https://meet.google.com/abc" }];
-  const again = await m.apply("[[BOOK 2026-10-29T10:45 sara@shop.sa]]", "966500000007", "Sara");
+  const again = await m.apply("[[BOOK 2026-10-29T14:30 sara@shop.sa]]", "966500000007", "Sara");
   assert.equal(booked.length, 0);
   assert.ok(again.endsWith("\n[دخول الاجتماع](https://meet.google.com/abc)"));
 });
@@ -1026,18 +1026,18 @@ test("Zaid books meetings at least 12 hours ahead by default", async () => {
   assert.ok(slots.every((t) => t >= now + 12 * 3600_000));
 });
 
-test("the 16:00 slot is offered whenever it is free, and the day ends at 16:30", async () => {
-  const { DEFAULT_SETTINGS, freeSlots, spread, localIso } = await import("./gcal");
-  assert.equal(DEFAULT_SETTINGS.end, "16:30");
-  const now = Date.UTC(2026, 10, 1, 5, 0); // Sunday 08:00 Riyadh, so Monday is 12+ hours away
-  const s = { ...DEFAULT_SETTINGS, aheadDays: 1 };
-  const mon = freeSlots(s, [], now, 60).map((t) => localIso(t, s.tz)).filter((x) => x.startsWith("2026-11-02"));
-  assert.ok(mon.includes("2026-11-02T16:00"));
-  const offer = spread(freeSlots(s, [], now, 60), s.tz).map((t) => localIso(t, s.tz));
-  assert.ok(offer.includes("2026-11-02T16:00"));
-  // a meeting already at 16:00 keeps that slot out
-  const busy = [{ start: Date.UTC(2026, 10, 2, 13, 0), end: Date.UTC(2026, 10, 2, 13, 30) }];
-  assert.ok(!freeSlots(s, busy, now, 60).map((t) => localIso(t, s.tz)).includes("2026-11-02T16:00"));
+test("Zaid offers 2:30 and 3:30 PM, Monday to Thursday only, whatever is stored", async () => {
+  const { DEFAULT_SETTINGS, MEETING_SLOTS, getSettings, freeSlots, localIso } = await import("./gcal");
+  assert.deepEqual(DEFAULT_SETTINGS.days, [1, 2, 3, 4]);
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:settings", JSON.stringify({ start: "10:00", end: "20:00", days: [0, 5, 6], minutes: 45, gap: 5, noticeHours: 12 }));
+  const s = await getSettings(base);
+  assert.deepEqual({ days: s.days, start: s.start, end: s.end, minutes: s.minutes, gap: s.gap }, MEETING_SLOTS);
+  const now = Date.UTC(2026, 10, 1, 5, 0); // Sunday 08:00 Riyadh
+  const slots = freeSlots(s, [], now, 60).map((t) => localIso(t, s.tz));
+  const mon = slots.filter((x) => x.startsWith("2026-11-02"));
+  assert.deepEqual(mon, ["2026-11-02T14:30", "2026-11-02T15:30"]);
+  assert.ok(!slots.some((x) => x.startsWith("2026-11-06") || x.startsWith("2026-11-07") || x.startsWith("2026-11-08")));
 });
 
 test("team ownership: a team answer holds the chat for a day; broadcasts and the app's away message do not", async () => {
