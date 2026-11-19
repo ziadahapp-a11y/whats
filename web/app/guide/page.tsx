@@ -180,7 +180,7 @@ export default async function Guide() {
 
         <section aria-labelledby="s8">
           <h2 id="s8">8. المزامنة والسرعة</h2>
-          <p>على Hobby تشتغل المزامنة المجدولة مرة باليوم. الفلوات تشتغل أيضاً عند كل طلب من Claude. لو تبي ردود أسرع، اربط خدمة نبض مجانية (مثل cron-job.org) تستدعي كل 5 دقائق:</p>
+          <p>على Hobby تشتغل المزامنة المجدولة مرتين بالأسبوع (الاثنين والخميس). الفلوات تشتغل أيضاً عند كل طلب من Claude. لو تبي ردود أسرع، اربط خدمة نبض مجانية (مثل cron-job.org) تستدعي كل 30 دقيقة أو أكثر:</p>
           <Code label="رابط النبض">{`${origin}/api/cron/sync?key=YOUR_CRON_SECRET`}</Code>
         </section>
 

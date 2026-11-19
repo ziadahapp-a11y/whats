@@ -6,7 +6,7 @@
 // message cache and the flow state, so nothing can mix between numbers.
 
 import { randomBytes } from "node:crypto";
-import { clearAuth, isPaired, type RawKV } from "./auth";
+import { clearAuth, isPaired, scanKeys, type RawKV } from "./auth";
 
 export const MAIN = "main";
 export const OFFICIAL = "official";
@@ -30,6 +30,12 @@ export function scopeRaw(raw: RawKV, prefix: string): RawKV {
     set: (k, v, o) => raw.set(prefix + k, v, o),
     del: (...ks) => raw.del(...ks.map((k) => prefix + k)),
     keys: raw.keys ? async (p) => (await raw.keys!(prefix + p)).map((k) => k.slice(prefix.length)) : undefined,
+    scan: raw.scan
+      ? async (cursor, o) => {
+          const [next, ks] = await raw.scan!(cursor, { ...o, match: prefix + o.match });
+          return [next, ks.map((k) => k.slice(prefix.length))];
+        }
+      : undefined,
   };
 }
 
@@ -85,11 +91,9 @@ export async function removeAccount(base: RawKV, id: string) {
   if (id === MAIN) return;
   const rows = parse(await base.get(REGISTRY));
   await save(base, rows.filter((a) => a.id !== id));
-  if (base.keys) {
-    for (const pattern of [`acct:${id}:*`, `${cachePrefix(id)}*`]) {
-      const keys = await base.keys(pattern);
-      for (let i = 0; i < keys.length; i += 500) await base.del(...keys.slice(i, i + 500));
-    }
+  for (const pattern of [`acct:${id}:*`, `${cachePrefix(id)}*`]) {
+    const keys = await scanKeys(base, pattern);
+    for (let i = 0; i < keys.length; i += 500) await base.del(...keys.slice(i, i + 500));
   }
 }
 

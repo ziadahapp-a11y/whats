@@ -45,13 +45,21 @@ export interface KV {
   zrange<T = string[]>(key: string, start: number | string, stop: number | string, opts?: { rev?: boolean; byScore?: boolean }): Promise<T>;
   zremrangebyrank(key: string, start: number, stop: number): Promise<unknown>;
   mget<T extends unknown[]>(...keys: string[]): Promise<T>;
+  /** One hash field; values are JSON-serialised by the client. */
+  hget<T>(key: string, field: string): Promise<T | null>;
+  hset(key: string, fields: Record<string, unknown>): Promise<unknown>;
+  hgetall<T>(key: string): Promise<Record<string, T> | null>;
 }
+
+/** One row of the chat summary hash: enough to draw the chat list in one read. */
+export type Summary = { waId: string; name?: string; lastAt: number; last?: StoredMessage; lastInboundAt?: number };
 
 type OptOut = { at: number; reason: string; active: boolean };
 
 const MGET_CHUNK = 500;
 const WINDOW_SECONDS = 24 * 60 * 60;
 const PER_CHAT_CAP = 50_000;
+const TRIM_CHANCE = 0.05; // about one write in twenty trims a chat's message list
 const TTL_SECONDS = 3 * 365 * 24 * 60 * 60; // keep message bodies for 3 years
 
 export class Store {
@@ -67,17 +75,36 @@ export class Store {
     const merged = existing ? { ...m, status: existing.status ?? m.status, error: existing.error ?? m.error } : m;
     await this.kv.set(`${this.p}m:${m.id}`, merged, { ex: TTL_SECONDS });
     await this.kv.zadd(`${this.p}c:${m.waId}`, { score: m.timestamp, member: m.id });
-    await this.kv.zremrangebyrank(`${this.p}c:${m.waId}`, 0, -(PER_CHAT_CAP + 1));
+    // Trimming is cheap to skip: a chat only grows past the cap by a few messages before a later write trims it.
+    if (Math.random() < TRIM_CHANCE) await this.kv.zremrangebyrank(`${this.p}c:${m.waId}`, 0, -(PER_CHAT_CAP + 1));
+
+    // The summary row already holds the newest and last-inbound times, so the chat's own keys are read only when no row exists yet.
+    const prev = await this.kv.hget<Summary>(`${this.p}sum`, m.waId);
+    const lastAt = prev ? prev.lastAt : ((await this.kv.get<number>(`${this.p}cl:${m.waId}`)) ?? 0);
     // Older messages (history backfill) must never push a chat down the list.
-    const lastAt = (await this.kv.get<number>(`${this.p}cl:${m.waId}`)) ?? 0;
     if (m.timestamp >= lastAt) {
-      await this.kv.set(`${this.p}cl:${m.waId}`, m.timestamp);
+      if (!prev) await this.kv.set(`${this.p}cl:${m.waId}`, m.timestamp);
       await this.kv.zadd(`${this.p}convs`, { score: m.timestamp, member: m.waId });
     }
     if (m.direction === "in") {
-      const prev = (await this.kv.get<number>(`${this.p}in:${m.waId}`)) ?? 0;
-      if (m.timestamp > prev) await this.kv.set(`${this.p}in:${m.waId}`, m.timestamp);
+      const knownIn = prev ? (prev.lastInboundAt ?? 0) : ((await this.kv.get<number>(`${this.p}in:${m.waId}`)) ?? 0);
+      if (m.timestamp > knownIn) await this.kv.set(`${this.p}in:${m.waId}`, m.timestamp);
     }
+    await this.touchSummary(m, prev);
+  }
+
+  /** Keeps one summary row per chat in the "sum" hash, so the chat list is one read instead of several per chat. */
+  private async touchSummary(m: StoredMessage, prev: Summary | null) {
+    // A brand-new row takes its name from the name key, so it is not lost before the chat is named.
+    const name = prev ? prev.name : (await this.kv.get<string>(`${this.p}n:${m.waId}`)) ?? undefined;
+    const base: Summary = prev ?? { waId: m.waId, lastAt: 0 };
+    const next: Summary = { ...base, waId: m.waId, name };
+    if (m.timestamp >= base.lastAt) {
+      next.lastAt = m.timestamp;
+      next.last = m;
+    }
+    if (m.direction === "in" && m.timestamp > (base.lastInboundAt ?? 0)) next.lastInboundAt = m.timestamp;
+    await this.kv.hset(`${this.p}sum`, { [m.waId]: next });
   }
 
   /** The oldest message we hold for a chat, the anchor for asking WhatsApp for earlier ones. */
@@ -92,7 +119,10 @@ export class Store {
   }
 
   async setName(waId: string, name: string) {
-    if (name) await this.kv.set(`${this.p}n:${waId}`, name);
+    if (!name) return;
+    await this.kv.set(`${this.p}n:${waId}`, name);
+    const prev = await this.kv.hget<Summary>(`${this.p}sum`, waId);
+    if (prev && prev.name !== name) await this.kv.hset(`${this.p}sum`, { [waId]: { ...prev, name } });
   }
 
   async getName(waId: string) {
@@ -139,6 +169,10 @@ export class Store {
   }
 
   async conversations(limit = 20, query?: string, now = Math.floor(Date.now() / 1000)): Promise<Conversation[]> {
+    if (!query) {
+      const fast = await this.summaryConversations(limit, now);
+      if (fast) return fast;
+    }
     const scan = query ? 500 : limit;
     // Upstash turns an all-digit member like "966500000001" back into a number: keep ids as strings.
     const waIds = (await this.kv.zrange<unknown[]>(`${this.p}convs`, 0, scan - 1, { rev: true })).map(String);
@@ -151,28 +185,58 @@ export class Store {
       .map((waId, i) => ({ waId, name: names[i] == null ? undefined : String(names[i]) }))
       .filter((c) => !q || c.waId.includes(q) || (c.name ?? "").toLowerCase().includes(q))
       .slice(0, limit);
-    return this.describe(picked, now);
-  }
-
-  /**
-   * Chats with a message at or after `since` (unix seconds), most recent first. The background work
-   * (catch-up, follow-ups) only cares about chats whose 24-hour window can still be open, so it reads
-   * these few instead of the last few hundred chats: each chat costs three Redis calls.
-   */
-  async activeSince(since: number, limit = 200, now = Math.floor(Date.now() / 1000)): Promise<Conversation[]> {
-    const waIds = (await this.kv.zrange<unknown[]>(`${this.p}convs`, since, "+inf", { byScore: true })).map(String).reverse().slice(0, limit);
-    if (!waIds.length) return [];
-    const names = await this.kv.mget<unknown[]>(...waIds.map((id) => `${this.p}n:${id}`));
-    return this.describe(waIds.map((waId, i) => ({ waId, name: names[i] == null ? undefined : String(names[i]) })), now);
-  }
-
-  private describe(picked: { waId: string; name?: string }[], now: number): Promise<Conversation[]> {
     return Promise.all(
       picked.map(async ({ waId, name }) => {
         const [last, w] = await Promise.all([this.lastMessage(waId), this.window(waId, now)]);
         return { waId, name, lastAt: last?.timestamp ?? 0, last, ...w };
       }),
     );
+  }
+
+  /** The chat list from the summary hash: one read, sorted in memory. Null until the hash has been built (see scripts/build-summary.ts). */
+  private async summaryConversations(limit: number, now: number): Promise<Conversation[] | null> {
+    if (!(await this.kv.get<number>(`${this.p}sum:ok`))) return null;
+    const rows = await this.kv.hgetall<Summary>(`${this.p}sum`);
+    if (!rows) return [];
+    return Object.values(rows)
+      .sort((a, b) => b.lastAt - a.lastAt)
+      .slice(0, limit)
+      .map((r) => {
+        const lastIn = r.lastInboundAt;
+        const closesAt = lastIn ? lastIn + WINDOW_SECONDS : undefined;
+        return {
+          waId: r.waId,
+          name: r.name,
+          lastAt: r.lastAt,
+          last: r.last,
+          lastInboundAt: lastIn,
+          windowClosesAt: closesAt,
+          windowOpen: !!closesAt && closesAt > now,
+        } as Conversation;
+      });
+  }
+
+  /** Builds or replaces the summary hash from the stored messages. Run by hand, never inside a request. */
+  async rebuildSummary(batch = 100): Promise<number> {
+    const waIds = await this.allChats();
+    let n = 0;
+    // Chats are read in parallel groups, so a few thousand commands finish well inside one request.
+    for (let i = 0; i < waIds.length; i += 25) {
+      const group = waIds.slice(i, i + 25);
+      const built = await Promise.all(
+        group.map(async (waId) => {
+          const [name, last, w] = await Promise.all([this.getName(waId), this.lastMessage(waId), this.window(waId)]);
+          return [waId, { waId, name, lastAt: last?.timestamp ?? 0, last, lastInboundAt: w.lastInboundAt } as Summary] as const;
+        }),
+      );
+      for (let j = 0; j < built.length; j += batch) {
+        const rows = Object.fromEntries(built.slice(j, j + batch));
+        await this.kv.hset(`${this.p}sum`, rows);
+        n += Object.keys(rows).length;
+      }
+    }
+    await this.kv.set(`${this.p}sum:ok`, 1);
+    return n;
   }
 
   /** The newest message still cached, reading a handful of ids rather than a page. */
@@ -311,6 +375,23 @@ export class MemoryKV implements KV {
     if (opts?.ex) this.expiresAt.set(key, Date.now() + opts.ex * 1000);
     else this.expiresAt.delete(key);
     return "OK";
+  }
+  private hashes = new Map<string, Map<string, unknown>>();
+
+  async hget<T>(key: string, field: string) {
+    const v = this.hashes.get(key)?.get(field);
+    return (v === undefined ? null : structuredClone(v)) as T | null;
+  }
+  async hset(key: string, fields: Record<string, unknown>) {
+    const h = this.hashes.get(key) ?? new Map<string, unknown>();
+    for (const [f, v] of Object.entries(fields)) h.set(f, structuredClone(v));
+    this.hashes.set(key, h);
+    return Object.keys(fields).length;
+  }
+  async hgetall<T>(key: string) {
+    const h = this.hashes.get(key);
+    if (!h) return null;
+    return Object.fromEntries([...h].map(([f, v]) => [f, structuredClone(v) as T])) as Record<string, T>;
   }
   async del(key: string) {
     this.data.delete(key);

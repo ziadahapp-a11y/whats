@@ -9,7 +9,7 @@
 // A key travels as `Authorization: Bearer <key>` or as `?key=<key>` in the URL.
 
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import type { RawKV } from "./wa/auth";
+import { scanKeys, type RawKV } from "./wa/auth";
 
 export type Scope = "read" | "full";
 export type Principal = {
@@ -106,13 +106,13 @@ export async function createDeviceKey(base: RawKV, input: { label: string; accou
 }
 
 export async function listDeviceKeys(base: RawKV): Promise<DeviceKey[]> {
-  const names = base.keys ? await base.keys(KEY_PREFIX + "*") : [];
+  const names = await scanKeys(base, KEY_PREFIX + "*");
   const rows = await Promise.all(names.map((n) => readKey(base, n)));
   return rows.filter((k): k is DeviceKey => !!k).sort((a, b) => a.createdAt - b.createdAt);
 }
 
 export async function revokeDeviceKey(base: RawKV, id: string): Promise<boolean> {
-  const names = base.keys ? await base.keys(KEY_PREFIX + "*") : [];
+  const names = await scanKeys(base, KEY_PREFIX + "*");
   for (const n of names) {
     const k = await readKey(base, n);
     if (k?.id === id) {

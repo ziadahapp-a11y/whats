@@ -48,6 +48,7 @@ export class Graph {
         ...(init.body ? { "Content-Type": "application/json" } : {}),
       },
       body: init.body ? JSON.stringify(init.body) : undefined,
+      signal: AbortSignal.timeout(15_000),
     });
     const data: any = await res.json().catch(() => ({}));
     if (!res.ok || data?.error) {
@@ -82,6 +83,7 @@ export class Graph {
       method: "POST",
       headers: { Authorization: `Bearer ${this.cfg.accessToken}` },
       body: form,
+      signal: AbortSignal.timeout(45_000),
     });
     const data: any = await res.json().catch(() => ({}));
     if (!res.ok || data?.error || !data?.id) throw new GraphError(data?.error?.message ?? res.statusText, res.status, data?.error?.code);
@@ -102,6 +104,7 @@ export class Graph {
       method: "POST",
       headers: { Authorization: `OAuth ${this.cfg.accessToken}`, file_offset: "0" },
       body: new Uint8Array(bytes),
+      signal: AbortSignal.timeout(45_000),
     });
     const data: any = await res.json().catch(() => ({}));
     if (!res.ok || !data?.h) throw new GraphError(data?.error?.message ?? res.statusText, res.status, data?.error?.code);
@@ -181,7 +184,7 @@ export class Graph {
   async downloadMedia(mediaId: string, maxBytes = 5 * 1024 * 1024) {
     const meta = await this.call<{ url: string; mime_type: string; file_size: number; sha256: string }>(`/${mediaId}`);
     if (meta.file_size > maxBytes) return { meta, bytes: null as Uint8Array | null };
-    const res = await this.fetchImpl(meta.url, { headers: { Authorization: `Bearer ${this.cfg.accessToken}` } });
+    const res = await this.fetchImpl(meta.url, { headers: { Authorization: `Bearer ${this.cfg.accessToken}` }, signal: AbortSignal.timeout(45_000) });
     if (!res.ok) throw new GraphError(`media download failed: ${res.status}`, res.status);
     return { meta, bytes: new Uint8Array(await res.arrayBuffer()) };
   }

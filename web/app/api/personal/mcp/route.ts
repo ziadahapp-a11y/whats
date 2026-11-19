@@ -1,4 +1,5 @@
 import { createMcpHandler } from "mcp-handler";
+import { tracedServer } from "@/lib/toollog";
 import { authenticate, canUse } from "@/lib/access";
 import { personal } from "@/lib/runtime";
 import { listAccounts } from "@/lib/wa/accounts";
@@ -10,7 +11,7 @@ export const maxDuration = 120;
 function instructions(entries: Entry[], canSend: boolean) {
   return [
     "This server is the user's own WhatsApp, linked as a device and reached on demand.",
-    "- Read tools answer from a cache and sync automatically when it is older than 2 minutes; each sync takes a few seconds.",
+    "- Read tools answer from a cache and sync automatically when it is older than 10 minutes; each sync takes a few seconds.",
     entries.length > 1
       ? `- Several numbers are available (${entries.map((e) => `${e.id} = ${e.label}`).join(", ")}). Pass \`account\` to choose; sending requires it.`
       : "",
@@ -39,7 +40,7 @@ async function guarded(req: Request) {
   const entries: Entry[] = allowed.map((a) => ({ id: a.id, label: a.label, deps: account(a.id) }));
   const canSend = p.scope === "full";
   const handler = createMcpHandler(
-    (server) => registerPersonalTools(server, { base, accounts: entries, canSend }),
+    (server) => registerPersonalTools(tracedServer(server, "personal"), { base, accounts: entries, canSend }),
     { serverInfo: { name: "whats-mcp-personal", version: "1.1.0" }, instructions: instructions(entries, canSend) },
   );
   return handler(req);
