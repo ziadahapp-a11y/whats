@@ -47,14 +47,6 @@ export function checkAccount(info: PhoneInfo | null): PreflightCheck[] {
     ok: info.status === "CONNECTED",
     message: info.status === "CONNECTED" ? "Number is connected." : `Number status is "${info.status ?? "unknown"}"; it must be CONNECTED.`,
   });
-  checks.push({
-    id: "account.verified",
-    ok: info.code_verification_status === "VERIFIED",
-    message:
-      info.code_verification_status === "VERIFIED"
-        ? "Number is verified."
-        : `Number verification is "${info.code_verification_status ?? "unknown"}"; it must be VERIFIED.`,
-  });
   const q = info.quality_rating;
   checks.push({
     id: "account.quality",

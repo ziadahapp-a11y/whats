@@ -24,7 +24,7 @@ test("account checks fail closed", () => {
   const bad = (over: object) => checkAccount({ ...GOOD, ...over }).filter((c) => !c.ok).map((c) => c.id);
   assert.deepEqual(bad({ status: "PENDING" }), ["account.connected"]);
   assert.deepEqual(bad({ status: undefined }), ["account.connected"]);
-  assert.deepEqual(bad({ code_verification_status: "NOT_VERIFIED" }), ["account.verified"]);
+  assert.deepEqual(bad({ code_verification_status: "NOT_VERIFIED" }), [], "verification is not a send gate");
   assert.deepEqual(bad({ quality_rating: "YELLOW" }), ["account.quality"]);
   assert.deepEqual(bad({ quality_rating: "UNKNOWN" }), [], "a not-yet-rated number may send, capped");
   assert.deepEqual(bad({ quality_rating: undefined }), ["account.quality"]);
