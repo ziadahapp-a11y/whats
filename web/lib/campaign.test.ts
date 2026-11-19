@@ -47,7 +47,7 @@ async function started(t: ReturnType<typeof setup>, n: number) {
   return dry.campaignId!;
 }
 
-const fast = { pilotWaitMs: 0, budgetMs: 10_000 };
+const fast = { pilotWaitMs: 0, budgetMs: 10_000, spacingMs: () => 0 };
 
 test("dry run saves a campaign with a token and sends nothing", async () => {
   const t = setup();
@@ -228,16 +228,16 @@ test("pause, resume and cancel", async () => {
 test("a stop request reaches a slice that is already running", async () => {
   const t = setup();
   const id = await started(t, 60);
-  let first = true;
-  const orig = t.deps.sleep!;
-  t.deps.sleep = async (ms) => {
-    if (first && t.g.sends.length === 3) {
-      first = false;
-      assert.equal((await stopCampaign(t.deps, id, "pause")).busy, true, "the running slice owns the lock");
-    }
-    return orig(ms);
-  };
-  const v = await advanceCampaign(t.deps, id, { ...fast, batch: 2 });
+  let stop: Promise<{ busy?: boolean }> | undefined;
+  const v = await advanceCampaign(t.deps, id, {
+    ...fast,
+    batch: 2,
+    spacingMs: () => {
+      if (!stop && t.g.sends.length === 3) stop = stopCampaign(t.deps, id, "pause");
+      return 0;
+    },
+  });
+  assert.equal((await stop!).busy, true, "the running slice owns the lock");
   assert.equal(v.status, "halted");
   assert.ok(t.g.sends.length < 10, "it stops at its next batch");
 });
@@ -284,4 +284,21 @@ test("the inbox keeps the rendered message, not just the template name", async (
   await advanceCampaign(t.deps, id, fast);
   const [m] = await t.store.messages(phone(1));
   assert.equal(m?.text, "هلا عميل1، عرض الصيف لك فقط");
+});
+
+test("after the pilot, each message waits its own gap before the next", async () => {
+  const t = setup();
+  const id = await started(t, 12);
+  await advanceCampaign(t.deps, id, { ...fast, pilotWaitMs: 0 }); // pilot of 5 goes out
+  const gaps = [180_000, 240_000];
+  const paced = { ...fast, spacingMs: () => gaps.shift() ?? 300_000 };
+  const a = await advanceCampaign(t.deps, id, paced);
+  assert.equal(a.status, "waiting");
+  assert.equal(t.g.sends.length, 6, "one message per slice");
+  assert.equal(a.resumeAt! - t.clock.t, 180_000, "waits 3 minutes after that message");
+  t.clock.t += 180_000;
+  const b = await advanceCampaign(t.deps, id, paced);
+  assert.equal(b.status, "waiting");
+  assert.equal(t.g.sends.length, 7);
+  assert.equal(b.resumeAt! - t.clock.t, 240_000, "waits 4 minutes after the next one");
 });

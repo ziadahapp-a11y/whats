@@ -333,9 +333,12 @@ export type AdvanceOptions = {
   /** How long this call may keep sending. Default 45 s, under the 60 s function limit. */
   budgetMs?: number;
   batch?: number;
-  perSecond?: number;
   pilotWaitMs?: number;
+  /** Wait after each message before the next one. Default: a random 3 to 5 minutes. */
+  spacingMs?: () => number;
 };
+
+const DEFAULT_SPACING_MS = () => (3 + Math.random() * 2) * 60_000;
 
 function halt(c: Campaign, reason: string, code?: number) {
   c.status = "halted";
@@ -347,10 +350,9 @@ function halt(c: Campaign, reason: string, code?: number) {
 export async function advanceCampaign(deps: CampaignDeps, id: string, opts: AdvanceOptions = {}): Promise<CampaignView> {
   const { graph, store } = deps;
   const now = deps.now ?? Date.now;
-  const sleep = deps.sleep ?? defaultSleep;
   const budgetMs = opts.budgetMs ?? 45_000;
   const batchSize = opts.batch ?? 25;
-  const gapMs = 1000 / (opts.perSecond ?? 10);
+  const spacingMs = opts.spacingMs ?? DEFAULT_SPACING_MS;
   const breaker = deps.breaker ?? DEFAULT_BREAKER;
 
   const c = await load(store, id);
@@ -437,17 +439,19 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
           halt(c, v.reason, v.code);
           break;
         }
-        await sleep(gapMs);
-      }
-      await save(store, c, outcomes);
-
-      if (c.status === "running" && !c.pilotDone && c.cursor >= c.pilotSize) {
-        c.pilotDone = true;
+        // One message, then wait before the next. The pilot batch waits longer so its delivery results can arrive.
         if (c.cursor < c.total) {
-          c.status = "waiting";
-          c.resumeAt = now() + (opts.pilotWaitMs ?? PILOT_WAIT_MS);
+          const pilotJustEnded = !c.pilotDone && c.cursor >= c.pilotSize;
+          if (pilotJustEnded) c.pilotDone = true;
+          const wait = pilotJustEnded ? (opts.pilotWaitMs ?? PILOT_WAIT_MS) : spacingMs();
+          if (wait > 0 || pilotJustEnded) {
+            c.status = "waiting";
+            c.resumeAt = now() + wait;
+            break;
+          }
         }
       }
+      await save(store, c, outcomes);
     }
 
     if (c.status === "running" && c.cursor >= c.total) {
