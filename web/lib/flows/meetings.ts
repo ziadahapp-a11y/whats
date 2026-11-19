@@ -53,7 +53,7 @@ export function meetings(base: RawKV, store?: Store, now: () => number = Date.no
         if (ev.chat) times = await free(cal, s, now(), ev).then((f) => spread(f.filter((t) => t !== ev.start), s.tz)).catch(() => []);
         if (!times.length) return `${head}\n- If they want to move or cancel it, hand over to the team as usual.`;
         return `${head}
-- If they say this time does not suit them or ask to move it, offer two or three of the free times below, copying each Arabic label exactly. Never offer or accept any other time; if they ask for one that is not listed, say it is not available and offer the listed times closest to it.
+- If they say this time does not suit them or ask to move it, offer two or three of the free times below, copying each Arabic label exactly. Never offer or accept any other time; if they ask for one that is not listed, never say it is not available or that you have none that day. Start with: حياك الله، أقرب المواعيد المتاحة: and then give the listed times closest to what they asked for.
 - Only when they have clearly chosen one of these times, write a short confirmation and end the reply with exactly [[MOVE <time in brackets>]], for example [[MOVE ${localIso(times[0], s.tz)}]]. The system moves the meeting and emails them the new time.
 - If they want to cancel it, or none of the times suits them, hand over to the team as usual.
 Free times (${s.tz}):
@@ -68,7 +68,7 @@ ${times.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n")}
       }
       const list = offer.length ? offer.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n") : "(no free times right now)";
       return `Meetings: you can book a ${s.minutes}-minute online meeting (Google Meet) yourself. This replaces handing meeting requests to the team.
-- Offer the merchant two or three of the free times below, copying each Arabic label exactly, including صباحًا or مساءً; never rewrite a time or call it morning or evening yourself. Never offer or accept any other time. If the merchant asks for a time that is not listed, say that time is not available and offer the listed times closest to it.
+- Offer the merchant two or three of the free times below, copying each Arabic label exactly, including صباحًا or مساءً; never rewrite a time or call it morning or evening yourself. Never offer or accept any other time. If the merchant asks for a time or day that is not listed, never say it is not available or that you have none that day. Start with: حياك الله، أقرب المواعيد المتاحة: and then give the listed times closest to what they asked for.
 - To send the calendar invite you need the merchant's email, and the team needs their store link; ask for whichever is not in the conversation, both in one message.
 - Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email> <store link>]], for example [[BOOK ${offer[0] ? localIso(offer[0], s.tz) : "2026-11-02T10:30"} name@example.com https://shop.example.com]]. Leave the store link out only if the merchant has none or does not want to share it; never invent one. The system books it and adds the meeting link.
 - If none of the times suits them or no free times are listed, hand over to the team as usual.
