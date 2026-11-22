@@ -1351,3 +1351,12 @@ test("price answers follow the merchant's plan, with the annual offer only while
   assert.match(off, /There is no annual offer now/);
   assert.ok(!off.includes("Current offer"));
 });
+
+test("the reply logic rule carries today's Riyadh date and the busy and waiting rules", async () => {
+  const { logicRule } = await import("./flows/links");
+  const r = logicRule(Date.UTC(2026, 10, 22, 21, 30)); // 00:30 on the 23rd in Riyadh
+  assert.match(r, /Today is 2026-11-23 \(Riyadh\)/);
+  assert.match(r, /already ended/);
+  assert.match(r, /برسلك/);
+  assert.match(r, /do not list meeting times/);
+});
