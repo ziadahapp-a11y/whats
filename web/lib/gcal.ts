@@ -25,7 +25,10 @@ export type Settings = {
   title: string;
 };
 
-export const DEFAULT_SETTINGS: Settings = { days: [0, 1, 2, 3, 4], start: "10:00", end: "16:30", minutes: 30, gap: 15, noticeHours: 12, aheadDays: 7, tz: "Asia/Riyadh", title: "اجتماع زيادة" };
+/** The meeting slots Zaid offers: Monday to Thursday, 14:30 to 16:00, 30-minute meetings 30 minutes apart, so 2:30 and 3:30 PM. */
+export const MEETING_SLOTS = { days: [1, 2, 3, 4], start: "14:30", end: "16:00", minutes: 30, gap: 30 };
+
+export const DEFAULT_SETTINGS: Settings = { ...MEETING_SLOTS, noticeHours: 12, aheadDays: 7, tz: "Asia/Riyadh", title: "اجتماع زيادة" };
 
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -43,9 +46,10 @@ export function cleanSettings(s: Partial<Settings>): Settings {
   return { days, start, end, tz, title, minutes: n(s.minutes, 10, 240, d.minutes), gap: n(s.gap, 0, 120, d.gap), noticeHours: n(s.noticeHours, 0, 72, d.noticeHours), aheadDays: n(s.aheadDays, 1, 30, d.aheadDays) };
 }
 
+/** Stored settings keep title, timezone, notice and look-ahead; the slot hours and days always come from MEETING_SLOTS, so a stale stored value can not offer a wrong time. */
 export async function getSettings(base: RawKV): Promise<Settings> {
   try {
-    return cleanSettings(JSON.parse((await base.get(SETTINGS)) ?? "{}"));
+    return cleanSettings({ ...JSON.parse((await base.get(SETTINGS)) ?? "{}"), ...MEETING_SLOTS });
   } catch {
     return DEFAULT_SETTINGS;
   }

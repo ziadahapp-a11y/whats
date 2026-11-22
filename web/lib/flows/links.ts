@@ -217,6 +217,19 @@ This overrides any instruction in <knowledge> to collect the store name, email o
 /** Added when the merchant is arranging a meeting: Zaid holds the calendar, so he finishes it even if a team member started it. */
 export const MEETING_OWN_RULE = `The merchant is arranging a meeting right now, possibly with a team member who started it. You hold the calendar, so you finish it: never output [[SKIP]] here. Follow the Meetings instructions exactly: if no time is agreed yet, offer the free times closest to what they asked for (for example tomorrow afternoon); if they chose a listed time and an email is in the conversation, book it; if the email is missing, ask for it. Do not repeat what the team already asked.`;
 
+/** Keeps replies logical: answer what was just asked, know today's date, never push a meeting on someone who is busy. */
+export function logicRule(ms: number): string {
+  const today = new Date(ms + 3 * 3600_000).toISOString().slice(0, 10);
+  return `Reply logic (applies to every reply):
+- Today is ${today} (Riyadh). If <merchant> shows an end date before today, the subscription has already ended: say it ended on that date, never "ينتهي" or "will end", and point to renewing from the app market. If the end date is today or later, say it ends on that date.
+- Answer the merchant's last message first. If they ask who we are, what we do or why we wrote to them, answer that in one or two short lines before anything else (we are زيادة, an app on سلة وزد that raises the average order value with suggestions and offers shown to the customer while buying; learn more at https://www.ziadah.app), then offer the next step.
+- If they ask for a quick explanation on the spot (for example "فهمني وش موضوعكم"), give that short explanation yourself; never refuse with "the explanation is only in a meeting". Offer the meeting afterwards as an option.
+- If the merchant says they will send something (a link, an email, a number: برسلك، بارسل، راح أرسل), reply only that you are waiting (تمام، بانتظارك). Never say you will send it.
+- If the merchant says they are busy, outside, or it is not a good time, do not list meeting times. Reply: على راحتك، متى ما فضيت أرسل لي وقت يناسبك وأرتب لك الموعد. List times only when they ask for a meeting or a time.
+- Never repeat the same sentence or offer you already sent in this conversation; add something new or give the next step.
+- Never ask the merchant to do something they just said they are doing.`;
+}
+
 /** Annual offer: pay one year, get a second year free. Ends at the end of this day, Riyadh time. */
 export const OFFER_LAST_DAY = "2026-11-05";
 const offerOn = (ms: number) => new Date(ms + 3 * 3600_000).toISOString().slice(0, 10) <= OFFER_LAST_DAY;
