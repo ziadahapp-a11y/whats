@@ -1345,7 +1345,10 @@ test("price answers follow the merchant's plan, with the annual offer only while
   const { priceRule } = await import("./flows/links");
   const on = priceRule(Date.UTC(2026, 10, 4, 9));
   assert.match(on, /سنة \+ سنة مجاناً/);
-  assert.match(on, /النمو 249 شهري أو 2,990 سنوي/);
+  assert.match(on, /النمو 290 شهري أو 2,990 سنوي/);
+  assert.match(on, /الاحترافية 790 شهري/);
+  assert.match(on, /الأعمال 1,990 شهري/);
+  assert.match(on, /الانطلاقة سنوي فقط بـ 350/);
   assert.match(on, /الانطلاقة is NOT in the offer/);
   const off = priceRule(Date.UTC(2026, 10, 5, 21, 30)); // 6 Nov 00:30 Riyadh
   assert.match(off, /There is no annual offer now/);

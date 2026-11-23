@@ -10,11 +10,10 @@
 // campaign that has been started with its dry-run token.
 
 import { randomUUID } from "node:crypto";
-import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, qualityAllowsSending, type BreakerConfig, type Outcome } from "./breaker";
+import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, type BreakerConfig, type Outcome } from "./breaker";
 import { GraphError, type Graph } from "./graph";
 import { normalizeSaudiMobile, preflight, type BlockedRow, type PreflightCheck, type PreflightReport, type RecipientRow } from "./preflight";
 import type { Store } from "./store";
-import { renderTemplateText } from "./template-text";
 
 export type CampaignDeps = {
   graph: Pick<Graph, "sendMessage" | "phoneInfo" | "getTemplate" | "getTemplateInfo">;
@@ -178,8 +177,7 @@ export function unsupportedReason(components: any[]): string | null {
     if (c.type === "HEADER" && /\{\{/.test(c.text ?? "")) return "Template header has a variable, which campaigns do not support yet.";
     if (c.type === "BUTTONS") {
       for (const b of c.buttons ?? []) {
-        // VOICE_CALL (call on WhatsApp) is static like PHONE_NUMBER: it takes no parameter at send time.
-        if (!["QUICK_REPLY", "PHONE_NUMBER", "URL", "VOICE_CALL"].includes(b.type)) return `Template has a ${b.type} button, which campaigns do not support yet.`;
+        if (!["QUICK_REPLY", "PHONE_NUMBER", "URL"].includes(b.type)) return `Template has a ${b.type} button, which campaigns do not support yet.`;
         if (b.type === "URL" && /\{\{/.test(b.url ?? "")) return "Template has a URL button with a variable, which campaigns do not support yet.";
       }
     }
@@ -333,12 +331,9 @@ export type AdvanceOptions = {
   /** How long this call may keep sending. Default 45 s, under the 60 s function limit. */
   budgetMs?: number;
   batch?: number;
+  perSecond?: number;
   pilotWaitMs?: number;
-  /** Wait after each message before the next one. Default: a random 3 to 5 minutes. */
-  spacingMs?: () => number;
 };
-
-const DEFAULT_SPACING_MS = () => (3 + Math.random() * 2) * 60_000;
 
 function halt(c: Campaign, reason: string, code?: number) {
   c.status = "halted";
@@ -350,9 +345,10 @@ function halt(c: Campaign, reason: string, code?: number) {
 export async function advanceCampaign(deps: CampaignDeps, id: string, opts: AdvanceOptions = {}): Promise<CampaignView> {
   const { graph, store } = deps;
   const now = deps.now ?? Date.now;
+  const sleep = deps.sleep ?? defaultSleep;
   const budgetMs = opts.budgetMs ?? 45_000;
   const batchSize = opts.batch ?? 25;
-  const spacingMs = opts.spacingMs ?? DEFAULT_SPACING_MS;
+  const gapMs = 1000 / (opts.perSecond ?? 10);
   const breaker = deps.breaker ?? DEFAULT_BREAKER;
 
   const c = await load(store, id);
@@ -368,9 +364,6 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
     c.status = "running";
     delete c.resumeAt;
     let quality: string | undefined;
-    // Fetched once per call so the inbox shows the message itself; null falls back to the name.
-    const rawTemplate = await settle(() => graph.getTemplate(c.template.name, c.template.language));
-    const components = (rawTemplate as any)?.components as any[] | undefined;
 
     while (c.status === "running" && c.cursor < c.total && now() < deadline) {
       const stop = await store.mkGet<"pause" | "cancel">(key(id, ":stop"));
@@ -418,7 +411,7 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
                 waId: res.waId ?? r.phone,
                 direction: "out",
                 type: "template",
-                text: renderTemplateText(components, r.params) ?? `[template ${c.template.name}] ${r.params.join(" | ")}`.trim(),
+                text: `[template ${c.template.name}] ${r.params.join(" | ")}`,
                 timestamp: Math.floor(at / 1000),
                 status: "sent",
                 source: "api",
@@ -439,19 +432,17 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
           halt(c, v.reason, v.code);
           break;
         }
-        // One message, then wait before the next. The pilot batch waits longer so its delivery results can arrive.
-        if (c.cursor < c.total) {
-          const pilotJustEnded = !c.pilotDone && c.cursor >= c.pilotSize;
-          if (pilotJustEnded) c.pilotDone = true;
-          const wait = pilotJustEnded ? (opts.pilotWaitMs ?? PILOT_WAIT_MS) : spacingMs();
-          if (wait > 0 || pilotJustEnded) {
-            c.status = "waiting";
-            c.resumeAt = now() + wait;
-            break;
-          }
-        }
+        await sleep(gapMs);
       }
       await save(store, c, outcomes);
+
+      if (c.status === "running" && !c.pilotDone && c.cursor >= c.pilotSize) {
+        c.pilotDone = true;
+        if (c.cursor < c.total) {
+          c.status = "waiting";
+          c.resumeAt = now() + (opts.pilotWaitMs ?? PILOT_WAIT_MS);
+        }
+      }
     }
 
     if (c.status === "running" && c.cursor >= c.total) {
@@ -517,7 +508,7 @@ export async function stopCampaign(deps: CampaignDeps, id: string, mode: "pause"
 
 export type ResumeResult = { ok: true; campaign: CampaignView } | { ok: false; error: string };
 
-/** Resumes a halted campaign. The number must be GREEN (or still unrated) again; the breaker then judges only what is sent from here on. */
+/** Resumes a halted campaign. The number must be GREEN again; the breaker then judges only what is sent from here on. */
 export async function resumeCampaign(deps: CampaignDeps, id: string): Promise<ResumeResult> {
   const { graph, store } = deps;
   const c = await load(store, id);
@@ -525,7 +516,7 @@ export async function resumeCampaign(deps: CampaignDeps, id: string): Promise<Re
   if (c.status !== "halted") return { ok: false, error: `Campaign is ${c.status}, not halted.` };
   const info = await settle(() => graph.phoneInfo());
   const quality = (info as any)?.quality_rating;
-  if (!qualityAllowsSending(quality, deps.breaker ?? DEFAULT_BREAKER)) return { ok: false, error: `Number quality is "${quality ?? "unknown"}"; resume only when it is back to GREEN.` };
+  if (quality !== (deps.breaker ?? DEFAULT_BREAKER).requiredQuality) return { ok: false, error: `Number quality is "${quality ?? "unknown"}"; resume only when it is back to GREEN.` };
   const outcomes = (await store.mkGet<Outcome[]>(key(id, ":o"))) ?? [];
   c.status = "running";
   c.evalFrom = outcomes.length;

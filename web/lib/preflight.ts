@@ -34,9 +34,6 @@ export const TIER_LIMITS: Record<string, number> = {
   TIER_UNLIMITED: Number.POSITIVE_INFINITY,
 };
 
-/** Most unique recipients per rolling 24 hours while Meta has not rated the number yet (quality UNKNOWN). */
-export const UNKNOWN_QUALITY_DAILY_CAP = 50;
-
 export function checkAccount(info: PhoneInfo | null): PreflightCheck[] {
   if (!info) {
     return [{ id: "account.info", ok: false, message: "Could not read the number's status from Meta, so nothing is sent." }];
@@ -47,16 +44,21 @@ export function checkAccount(info: PhoneInfo | null): PreflightCheck[] {
     ok: info.status === "CONNECTED",
     message: info.status === "CONNECTED" ? "Number is connected." : `Number status is "${info.status ?? "unknown"}"; it must be CONNECTED.`,
   });
-  const q = info.quality_rating;
+  checks.push({
+    id: "account.verified",
+    ok: info.code_verification_status === "VERIFIED",
+    message:
+      info.code_verification_status === "VERIFIED"
+        ? "Number is verified."
+        : `Number verification is "${info.code_verification_status ?? "unknown"}"; it must be VERIFIED.`,
+  });
   checks.push({
     id: "account.quality",
-    ok: q === "GREEN" || q === "UNKNOWN",
+    ok: info.quality_rating === "GREEN",
     message:
-      q === "GREEN"
+      info.quality_rating === "GREEN"
         ? "Quality rating is GREEN."
-        : q === "UNKNOWN"
-          ? `Quality rating is UNKNOWN (not rated yet); sends are capped at ${UNKNOWN_QUALITY_DAILY_CAP} recipients per 24 hours until it turns GREEN.`
-          : `Quality rating is "${q ?? "unknown"}"; campaigns only run on GREEN, or UNKNOWN with a ${UNKNOWN_QUALITY_DAILY_CAP}-a-day cap.`,
+        : `Quality rating is "${info.quality_rating ?? "unknown"}"; campaigns only run on GREEN.`,
   });
   const tier = info.messaging_limit_tier;
   checks.push({
@@ -132,18 +134,9 @@ export function normalizeSaudiMobile(input: unknown): string | null {
   if (s.startsWith("+")) s = s.slice(1);
   if (!/^\d+$/.test(s)) return null;
   if (s.startsWith("00")) s = s.slice(2);
-  // Saudi numbers: 966 5xxxxxxxx, 05xxxxxxxx, or 5xxxxxxxx.
-  if (s.startsWith("966")) {
-    const rest = s.slice(3).replace(/^0/, "");
-    return /^5\d{8}$/.test(rest) ? `966${rest}` : null;
-  }
-  if (s.startsWith("0")) {
-    const rest = s.slice(1);
-    return /^5\d{8}$/.test(rest) ? `966${rest}` : null;
-  }
-  if (/^5\d{8}$/.test(s)) return `966${s}`;
-  // Any other number must start with its country code (no leading 0), 8 to 15 digits in total.
-  return /^[1-9]\d{7,14}$/.test(s) ? s : null;
+  if (s.startsWith("966")) s = s.slice(3);
+  if (s.startsWith("0")) s = s.slice(1);
+  return /^5\d{8}$/.test(s) ? `966${s}` : null;
 }
 
 export type RecipientRow = {
@@ -266,25 +259,22 @@ export type Capacity = { check: PreflightCheck; limit: number; remaining: number
  * figure, so we count what this system sent. Messages sent from elsewhere
  * (WhatsApp Manager, other tools) are invisible to us, hence the safety margin.
  */
-export function checkCapacity(tier: string | undefined, recent24h: ReadonlySet<string>, phones: readonly string[], margin = 0.2, cap?: number): Capacity {
+export function checkCapacity(tier: string | undefined, recent24h: ReadonlySet<string>, phones: readonly string[], margin = 0.2): Capacity {
   const tierLimit = tier ? TIER_LIMITS[tier] : undefined;
   const newUnique = phones.filter((p) => !recent24h.has(p)).length;
   if (tierLimit === undefined) {
     return { check: { id: "capacity", ok: false, message: "Messaging limit unknown, so capacity cannot be verified." }, limit: 0, remaining: 0, newUnique };
   }
-  const tierCap = Math.floor(tierLimit * (1 - margin));
-  const capped = cap !== undefined && cap < tierCap;
-  const limit = capped ? cap : tierCap;
+  const limit = Math.floor(tierLimit * (1 - margin));
   const remaining = Math.max(0, limit - recent24h.size);
   const ok = newUnique <= remaining;
-  const basis = capped ? `cap of ${cap} while the number's quality is UNKNOWN` : `tier ${tier}, ${Math.round(margin * 100)}% margin kept`;
   return {
     check: {
       id: "capacity",
       ok,
       message: ok
-        ? `${newUnique} new recipient(s) fit in the remaining ${remaining} of ${limit} (${basis}).`
-        : `${newUnique} new recipient(s) exceed the remaining ${remaining} of ${limit} for the next 24 hours (${basis}).`,
+        ? `${newUnique} new recipient(s) fit in the remaining ${remaining} of ${limit} (tier ${tier}, ${Math.round(margin * 100)}% margin kept).`
+        : `${newUnique} new recipient(s) exceed the remaining ${remaining} of ${limit} for the next 24 hours (tier ${tier}, ${Math.round(margin * 100)}% margin kept).`,
     },
     limit,
     remaining,
@@ -334,7 +324,6 @@ export function preflight<T extends RecipientRow>(input: PreflightInput<T>): Pre
     input.recent24h,
     accepted.map((a) => a.phone),
     input.capacityMargin,
-    input.phone?.quality_rating === "UNKNOWN" ? UNKNOWN_QUALITY_DAILY_CAP : undefined,
   );
 
   const checks = [...account, ...template, capacity.check];
