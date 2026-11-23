@@ -1363,3 +1363,21 @@ test("the reply logic rule carries today's Riyadh date and the busy and waiting 
   assert.match(r, /برسلك/);
   assert.match(r, /do not list meeting times/);
 });
+
+test("a merchant answering a follow-up the team opened the chat with is Zaid's to answer", async () => {
+  const { teamOpener, answersTeam } = await import("./flows/links");
+  const m = (id: string, direction: "in" | "out", timestamp: number, source?: "business_app" | "api", text = "هلا متجر، معك فريق زيادة. أضفنا مزايا جديدة") => ({ id, direction, type: "text", text, timestamp, source });
+  const opener = [m("o", "out", 1000, "business_app"), m("q", "in", 1100)];
+  // another team's message or a question to a person keeps the wait
+  assert.ok(!teamOpener([m("o", "out", 1000, "business_app", "هلا، معك فريق راصد. كيف التجربة"), m("q", "in", 1100)], "q"));
+  assert.ok(!teamOpener([m("o", "out", 1000, "business_app", "ممكن توصلني بالمسؤول عن التطبيقات؟"), m("q", "in", 1100)], "q"));
+  assert.ok(answersTeam(opener, "q"));
+  assert.ok(teamOpener(opener, "q"));
+  // a team member answering the merchant's own question is holding the chat
+  const held = [m("a", "in", 100), m("b", "out", 200, "business_app", "تمام"), m("q", "in", 300)];
+  assert.ok(!teamOpener(held, "q"));
+  // a merchant who wrote the day before is not an opener either
+  assert.ok(!teamOpener([m("a", "in", 100), m("o", "out", 3000, "business_app"), m("q", "in", 3100)], "q"));
+  // Zaid's own message is never an opener
+  assert.ok(!teamOpener([m("z", "out", 1000, "api"), m("q", "in", 1100)], "q"));
+});

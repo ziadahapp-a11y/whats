@@ -138,6 +138,34 @@ export function answersTeam(msgs: readonly Msg[], id: string | undefined): boole
   return false;
 }
 
+/**
+ * The team message this merchant message answers opened the chat: the merchant had not written in the day before it.
+ * Only the team's "معك فريق زيادة" follow-up counts: Zaid takes its replies, while any other team message keeps the 15 minute wait.
+ */
+/** The team's follow-up opener: "هلا X، معك فريق زيادة ...". Messages from other products' teams (راصد، شاع) are not Zaid's. */
+const FOLLOWUP = /معك\s[^\n]{0,25}فريق\s(?:تطبيق\s)?زيادة/;
+export function teamOpener(msgs: readonly Msg[], id: string | undefined): boolean {
+  const i = id ? msgs.findIndex((m) => m.id === id) : -1;
+  if (i < 0) return false;
+  let j = i - 1;
+  while (j >= 0 && (msgs[j].direction !== "out" || msgs[j].type === "reaction" || isAppAuto(msgs[j]))) j--;
+  const t = msgs[j];
+  if (!t || t.source !== "business_app" || !FOLLOWUP.test(t.text ?? t.caption ?? "")) return false;
+  return !msgs.slice(0, j).some((m) => m.direction === "in" && m.type !== "reaction" && t.timestamp - m.timestamp < TEAM_OWNS_SECS);
+}
+
+/** What the team told merchants is new in the app (their own follow-up message), for "وش تقدمون" and "المزايا" after that follow-up. */
+export const WHATS_NEW_RULE = `When a merchant asks what is new, what we offer or the features (وش تقدمون، المزايا، وش الجديد) after our follow-up message about new features, answer with this list, in one message, then ask whether they want help trying it:
+وش جديدنا في زيادة:
+- لوحة تحكم مطورة بتجربة أسرع وخطوات أوضح لإنشاء الاقتراحات ومعاينتها.
+- عروض الباقات (شرح: https://www.youtube.com/watch?v=e-cWqg43Ymw).
+- اختبارات A/B للكوبونات (شرح: https://www.youtube.com/watch?v=e-cWqg43Ymw).
+- تقارير وتحليلات أوضح: المشاهدات والتحويلات والإيرادات لكل اقتراح.
+- نسخ الاقتراحات: أنشئ نسخة من أي اقتراح وعدّل عليها.
+- إدارة أسهل: جدولة الاقتراحات، تشغيلها بدون تاريخ نهاية، ومتابعة الفواتير والاشتراك من مكان واحد.
+- مركز إشعارات ودعم مباشر داخل لوحة التحكم.
+Never claim more than this list. Do not answer with only "معك فريق زيادة" to such a question.`;
+
 /** A team member told the merchant they are checking something ("بتأكد بخصوصه الحين"). */
 const TEAM_PROMISE = /بتأكد|بتاكد|بنتأكد|بنتاكد|بشيك|بنشيك|اشيك عليه|بتحقق|بنتحقق|بنراجع|براجع|جاري (?:التحقق|التأكد|التاكد|المراجعة|الفحص|المتابعة)|ارجع لك|نرجع لك|برجع لك|بنرجع لك|بفيدك|نفيدك/;
 /** The merchant reported something not working. */
