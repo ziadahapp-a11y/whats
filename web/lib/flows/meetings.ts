@@ -11,6 +11,8 @@ export const HANDOFF = "جاري تحويلك للفريق المختص\n\nان 
 const MARKER = /\[\[\s*BOOK\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s+([^\s\]]+)(?:\s+([^\s\]]+))?\s*\]\]/i;
 const MOVE = /\[\[\s*MOVE\s+(\d{4}-\d{2}-\d{2}T\d{2}:\d{2})\s*\]\]/i;
 const EMAIL = /^[^\s@<>()]+@[^\s@<>()]+\.[a-z]{2,}$/i;
+/** the booking marker's email when the merchant's own email is on file for their number */
+const ON_FILE = "on-file";
 
 export type Meetings = {
   /** extra system text with the free times (or the merchant's meeting already booked), or "" when the calendar is not connected */
@@ -66,11 +68,19 @@ ${times.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n")}
         console.error("calendar read failed", e);
         return "";
       }
+      // the number's own record in the CRM sheet already holds the merchant's contact data: ask only for what it lacks
+      const rec = chat ? await findMerchant(base, chat).catch(() => []) : [];
+      const example = offer[0] ? localIso(offer[0], s.tz) : "2026-11-02T10:30";
+      const contact = rec.some((m) => m.emails?.length)
+        ? `- This merchant's email and store are already on file for their number. Never ask for the email, the store link or the store name. When the merchant has clearly chosen one of these times, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> ${ON_FILE}]], for example [[BOOK ${example} ${ON_FILE}]]. If the merchant gives a different email, use it instead: [[BOOK <time in brackets> <email>]]. The system books it and adds the meeting link.`
+        : rec.length
+          ? `- This merchant's store is already on file for their number, so never ask for the store link or name. To send the calendar invite you need their email: ask for it if it is not in the conversation. Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email>]], for example [[BOOK ${example} name@example.com]]. The system books it and adds the meeting link.`
+          : `- This number has no record on file. To send the calendar invite you need the merchant's email, and the team needs their store link; ask for whichever is not in the conversation, both in one message, once only.
+- Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email> <store link>]], for example [[BOOK ${example} name@example.com https://shop.example.com]]. Leave the store link out only if the merchant has none or does not want to share it; never invent one. The system books it and adds the meeting link.`;
       const list = offer.length ? offer.map((t) => `- ${slotLabel(t, s.tz)} [${localIso(t, s.tz)}]`).join("\n") : "(no free times right now)";
       return `Meetings: you can book a ${s.minutes}-minute online meeting (Google Meet) yourself. This replaces handing meeting requests to the team.
 - Offer the merchant two or three of the free times below, copying each Arabic label exactly, including صباحًا or مساءً; never rewrite a time or call it morning or evening yourself. Never offer or accept any other time. If the merchant asks for a time or day that is not listed, never say it is not available or that you have none that day. Start with: حياك الله، أقرب المواعيد المتاحة: and then give the listed times closest to what they asked for.
-- To send the calendar invite you need the merchant's email, and the team needs their store link; ask for whichever is not in the conversation, both in one message.
-- Only when the merchant has clearly chosen one of these times and given an email, write a short confirmation and end the reply with exactly [[BOOK <time in brackets> <email> <store link>]], for example [[BOOK ${offer[0] ? localIso(offer[0], s.tz) : "2026-11-02T10:30"} name@example.com https://shop.example.com]]. Leave the store link out only if the merchant has none or does not want to share it; never invent one. The system books it and adds the meeting link.
+${contact}
 - If none of the times suits them or no free times are listed, hand over to the team as usual.
 Free times (${s.tz}):
 ${list}`;
@@ -95,8 +105,10 @@ ${list}`;
       const m = MARKER.exec(reply);
       if (!m) return reply;
       const text = reply.replace(MARKER, "").trim();
-      const [, when, email, link] = m;
+      let [, when, email, link] = m;
       try {
+        const recs = await findMerchant(base, chat).catch(() => []);
+        if (email.toLowerCase() === ON_FILE) email = recs.flatMap((r) => r.emails ?? [])[0] ?? "";
         if (!EMAIL.test(email)) throw new Error(`bad email ${email}`);
         const s = await getSettings(base);
         const had = await booked(s, chat, name, email);

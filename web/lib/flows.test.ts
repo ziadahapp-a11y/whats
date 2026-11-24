@@ -1418,3 +1418,33 @@ test("one rating message per subscribed merchant, 20 hours after the last messag
   assert.match(ratingText("salla"), /في سلة بالرابط التالي: https:\/\/apps\.salla\.sa\/ar\/app\/1099604538$/);
   assert.deepEqual(await sendRatings(d, now + 600), []); // once per merchant
 });
+
+test("Zaid does not ask for an email or store link the merchant's number already has on file", async () => {
+  const { meetings } = await import("./flows/meetings");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:token", JSON.stringify({ refresh: "r", email: "team@ziadah.app" }));
+  await base.set("meta:crm:index", JSON.stringify({
+    "966500000001": [{ store: "متجر سارة", emails: ["sara@shop.sa"] }],
+    "966500000002": [{ store: "متجر بدون ايميل" }],
+  }));
+  const now = Date.UTC(2026, 10, 22, 5, 30); // Sunday 08:30 Riyadh
+  const booked: any[] = [];
+  const cal: any = { busy: async () => [], events: async () => [], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end, meet: "https://meet.google.com/abc-defg-hij" }) };
+  const m = meetings(base, new Store(new MemoryKV()), () => now, cal);
+  const known = await m.context("966500000001");
+  assert.match(known, /Never ask for the email, the store link or the store name/);
+  assert.match(known, /\[\[BOOK \S+ on-file\]\]/);
+  const noEmail = await m.context("966500000002");
+  assert.match(noEmail, /never ask for the store link or name/);
+  assert.match(noEmail, /ask for it if it is not in the conversation/);
+  const stranger = await m.context("966500000099");
+  assert.match(stranger, /This number has no record on file/);
+  const when = /\[\[BOOK (\S+) on-file\]\]/.exec(known)![1];
+  const out = await m.apply(`تمام [[BOOK ${when} on-file]]`, "966500000001", "Sara");
+  assert.equal(booked.length, 1);
+  assert.equal(booked[0].email, "sara@shop.sa");
+  assert.match(out, /sara@shop\.sa/);
+  // a number with no email on file cannot book with the placeholder
+  assert.ok((await m.apply(`[[BOOK ${when} on-file]]`, "966500000002")).includes("الفريق"));
+  assert.equal(booked.length, 1);
+});
