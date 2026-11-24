@@ -226,10 +226,23 @@ const bodyText = (m: Msg) => m.text ?? m.caption ?? "";
  * talks about a meeting or a time. Zaid answers these at once even while the team is in the chat, because
  * it holds the calendar.
  */
+/** Our messages that ask the merchant for what the booking still needs, and the one that confirms it. */
+const BOOKING_ASK = /دعوة الاجتماع|حجز الموعد|سجلت .{0,30}(?:الاثنين|الثلاثاء|الأربعاء|الخميس|الأحد)/;
+const BOOKED = /تم حجز موعدنا|موعدنا محجوز|ما قدرت أثبت الموعد/;
 export function meetingTalk(msgs: readonly Msg[], id: string): boolean {
   const i = msgs.findIndex((m) => m.id === id);
   if (i < 0) return false;
   const at = msgs[i].timestamp;
+  // mid-booking: we asked for the email or store link (or confirmed a time) and nothing confirmed the booking since, so any reply
+  // ("صحيح", a link, "تمام") belongs to the booking, even one a team member prompted
+  let ask = -1;
+  for (let j = i - 1; j >= 0 && at - msgs[j].timestamp <= 6 * 3600; j--) {
+    const t = bodyText(msgs[j]);
+    if (msgs[j].direction !== "out" || isAppAuto(msgs[j])) continue;
+    if (BOOKED.test(t)) break;
+    if (BOOKING_ASK.test(t)) { ask = j; break; }
+  }
+  if (ask >= 0 && msgs[i].direction === "in" && msgs[i].type !== "reaction") return true;
   // the merchant's own words must be about a time, so a "تمام شكرا" after the team set the meeting stays with the team
   const own = bodyText(msgs[i]);
   if (!(MEETING_TALK.test(own) || TIME_WORDS.test(own) || /[^\s@]+@[^\s@]+\.[a-z]{2,}/i.test(own))) return false;
@@ -243,7 +256,7 @@ Not a technical problem, so never send the ticket reply for it: a how-to questio
 This overrides any instruction in <knowledge> to collect the store name, email or a screenshot for a technical problem. Cancellation, refund, charge complaints and upset merchants still get the handover line from the strict rules.`;
 
 /** Added when the merchant is arranging a meeting: Zaid holds the calendar, so he finishes it even if a team member started it. */
-export const MEETING_OWN_RULE = `The merchant is arranging a meeting right now, possibly with a team member who started it. You hold the calendar, so you finish it: never output [[SKIP]] here. Follow the Meetings instructions exactly: if no time is agreed yet, offer the free times closest to what they asked for (for example tomorrow afternoon); if they chose a listed time and an email is in the conversation, book it; if the email is missing, ask for it. Do not repeat what the team already asked.`;
+export const MEETING_OWN_RULE = `The merchant is arranging a meeting right now, possibly with a team member who started it. You hold the calendar, so you finish it: never output [[SKIP]] here. A team member may have sent the merchant's email or store link on their behalf: take them from the conversation, and never ask again for what is already there. Follow the Meetings instructions exactly: if no time is agreed yet, offer the free times closest to what they asked for (for example tomorrow afternoon); if they chose a listed time and an email is in the conversation, book it; if the email is missing, ask for it. Do not repeat what the team already asked.`;
 
 /** Keeps replies logical: answer what was just asked, know today's date, never push a meeting on someone who is busy. */
 export function logicRule(ms: number): string {

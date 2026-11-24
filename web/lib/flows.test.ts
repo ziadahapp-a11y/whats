@@ -1448,3 +1448,22 @@ test("Zaid does not ask for an email or store link the merchant's number already
   assert.ok((await m.apply(`[[BOOK ${when} on-file]]`, "966500000002")).includes("الفريق"));
   assert.equal(booked.length, 1);
 });
+
+test("a reply in the middle of a booking is Zaid's even when a team member sent the link", async () => {
+  const { meetingTalk } = await import("./flows/links");
+  const m = (id: string, direction: "in" | "out", timestamp: number, text: string, source?: "business_app" | "api") => ({ id, direction, type: "text", text, timestamp, source });
+  const t = 1_800_000_000;
+  const mid = [
+    m("a", "out", t, "تمام، سجلت الخميس 26 نوفمبر في 2:30 مساءً. أرسل لي ايميلك ورابط متجرك عشان توصلك دعوة الاجتماع.", "api"),
+    m("b", "in", t + 120, "synchyhome@gmail.com"),
+    m("c", "out", t + 130, "تمام، وصلنا ايميلك. أرسل لي رابط متجرك عشان نكمل حجز الموعد.", "api"),
+    m("d", "out", t + 4000, "هذا رابط المتجر https://store.synchyhome.sa/", "business_app"),
+    m("e", "in", t + 5000, "صحيح"),
+  ];
+  assert.ok(meetingTalk(mid, "e"));
+  // once the booking is confirmed, a thanks is the team's again
+  const done = [...mid, m("f", "out", t + 5100, "تم حجز موعدنا الخميس بإذن الله", "api"), m("g", "in", t + 5200, "صحيح")];
+  assert.ok(!meetingTalk(done, "g"));
+  // with no booking asked, "صحيح" is not meeting talk
+  assert.ok(!meetingTalk([m("x", "out", t, "المشكلة انحلت؟", "api"), m("y", "in", t + 60, "صحيح")], "y"));
+});
