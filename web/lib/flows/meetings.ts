@@ -19,6 +19,8 @@ export type Meetings = {
   context(chat?: string, name?: string): Promise<string>;
   /** books when the reply carries a marker and returns the text to send */
   apply(reply: string, chat: string, name?: string): Promise<string>;
+  /** true while this merchant has a meeting still ahead (or the calendar cannot be read), so nothing unrelated goes to them */
+  upcoming(chat: string, name?: string): Promise<boolean>;
 };
 
 /** free slots; `own` is the merchant's meeting being moved, so its own time does not block the new one */
@@ -84,6 +86,15 @@ ${contact}
 - If none of the times suits them or no free times are listed, hand over to the team as usual.
 Free times (${s.tz}):
 ${list}`;
+    },
+
+    async upcoming(chat, name) {
+      try {
+        if (!(await connection(base)).connected) return false;
+        return !!(await booked(await getSettings(base), chat, name));
+      } catch {
+        return true;
+      }
     },
 
     async apply(reply, chat, name) {

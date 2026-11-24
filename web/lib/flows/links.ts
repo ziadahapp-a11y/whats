@@ -10,6 +10,8 @@ export const CLOSING_RULE = `When the merchant only closes the conversation and 
 
 export type LinkButton = { body: string; label: string; url: string };
 
+/** {{label|https://...}}: a button whose label is not repeated in the message text (used by the automatic rating message). */
+const BTN = /\{\{([^|}\n]{1,20})\|(https:\/\/[^\s}]+)\}\}/;
 const MD = /\[([^\]\n]{1,60})\]\((https:\/\/[^\s)]+)\)/;
 const BARE = /https:\/\/[^\s<>()\[\]]+[^\s<>()\[\].,!?؟،:;"']/;
 
@@ -28,6 +30,11 @@ const tidy = (s: string) =>
  * a bare link is taken out. Any other links stay as text. Null when there is no usable link.
  */
 export function linkButton(text: string): LinkButton | null {
+  const btn = BTN.exec(text);
+  if (btn) {
+    const body = tidy(text.replace(BTN, "").replace(new RegExp(MD.source, "g"), (_m, l, u) => `${l}: ${u}`));
+    if (body && btn[2].length <= 2000 && body.length <= 1024) return { body, label: btn[1].trim(), url: btn[2] };
+  }
   const md = MD.exec(text);
   const bare = BARE.exec(text);
   const useMd = md && (!bare || md.index <= bare.index);
@@ -50,7 +57,7 @@ export function linkButton(text: string): LinkButton | null {
 }
 
 /** The same reply as plain text, when no button can be sent. */
-export const plainLinks = (text: string) => text.replace(new RegExp(MD.source, "g"), (_m, l, u) => `${l}: ${u}`);
+export const plainLinks = (text: string) => text.replace(new RegExp(BTN.source, "g"), (_m, l, u) => `${l}: ${u}`).replace(new RegExp(MD.source, "g"), (_m, l, u) => `${l}: ${u}`);
 
 /** The Cloud API payload for one link button. */
 export const ctaPayload = (b: LinkButton, image?: string) => ({

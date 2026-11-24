@@ -1230,7 +1230,7 @@ test("meeting talk: Zaid answers a merchant arranging a time at once, even while
   const ai: AiClient = async () => "هذي الأوقات المتاحة";
   const s = setup([mkFlow({ actions: [{ type: "ai_reply" }] as FlowDraft["actions"], cooldownSecs: 0 } as never)], { ai });
   s.deps.channel = { ...s.deps.channel, kind: "official" };
-  s.deps.meetings = { context: async () => "Meetings: free times", apply: async (r: string) => r };
+  s.deps.meetings = { context: async () => "Meetings: free times", apply: async (r: string) => r, upcoming: async () => false };
   const t = Math.floor(NOW / 1000);
   await s.store.saveMessage({ id: "tt", waId: CHAT, direction: "out", type: "text", text: "لو حابين جدولة اجتماع", timestamp: t - 120, source: "business_app" });
   await s.store.saveMessage({ id: "tb", waId: CHAT, direction: "out", type: "text", text: "ابشر", timestamp: t - 40, source: "business_app" });
@@ -1414,9 +1414,18 @@ test("one rating message per subscribed merchant, 20 hours after the last messag
   const d = { store, state, channel, merchantsOf: async (c: string) => rec[c] ?? [] };
   assert.deepEqual((await sendRatings(d, now)).sort(), ["966500000001", "966500000002"]);
   assert.deepEqual(sent.sort(), [`966500000001:${ratingText("zid")}`, `966500000002:${ratingText("salla")}`]);
-  assert.match(ratingText("zid"), /في زد بالرابط التالي: https:\/\/apps\.zid\.sa\/application\/1826$/);
-  assert.match(ratingText("salla"), /في سلة بالرابط التالي: https:\/\/apps\.salla\.sa\/ar\/app\/1099604538$/);
+  assert.match(ratingText("zid"), /في زد بالرابط التالي: \{\{للتقييم من هنا\|https:\/\/apps\.zid\.sa\/application\/1826\}\}$/);
+  assert.match(ratingText("salla"), /في سلة بالرابط التالي: \{\{للتقييم من هنا\|https:\/\/apps\.salla\.sa\/ar\/app\/1099604538\}\}$/);
+  const { linkButton } = await import("./flows/links");
+  assert.deepEqual(linkButton(ratingText("zid")), { body: "تقييمك يصنع الفرق قيمنا الحين من صفحة التطبيق في زد بالرابط التالي", label: "للتقييم من هنا", url: "https://apps.zid.sa/application/1826" });
   assert.deepEqual(await sendRatings(d, now + 600), []); // once per merchant
+  // a merchant with a meeting still ahead gets no rating
+  await conv("966500000009", "كيف اضيف عرض", "من لوحة زيادة ← العروض.");
+  rec["966500000009"] = [{ store: "i", platform: "Zid", status: "paid" }];
+  const before = sent.length;
+  assert.deepEqual(await sendRatings({ ...d, hasMeeting: async (c: string) => c === "966500000009" }, now), []);
+  assert.equal(sent.length, before);
+  assert.deepEqual(await sendRatings({ ...d, hasMeeting: async () => false }, now), ["966500000009"]);
 });
 
 test("Zaid does not ask for an email or store link the merchant's number already has on file", async () => {

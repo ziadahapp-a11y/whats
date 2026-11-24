@@ -1,7 +1,7 @@
 // One automatic app-rating message per merchant on the official number: sent between 20 and 23.5 hours after the
 // merchant's last message, so it still lands inside the 24-hour window. Only for a subscribed merchant whose exchange
 // ended with an answer from Zaid, with no team member in the chat and nothing open (a question to the merchant,
-// a handoff, a complaint). The platform comes from the merchant's record; an unknown platform sends nothing.
+// a handoff, a complaint, a meeting still ahead). The platform comes from the merchant's record; an unknown platform sends nothing.
 
 import type { RawKV } from "../wa/auth";
 import type { Conversation, Store } from "../store";
@@ -15,7 +15,7 @@ export const RATING_AFTER = 20 * 3600;
 const LATEST = 23.5 * 3600;
 
 export const ratingText = (platform: "zid" | "salla") =>
-  `تقييمك يصنع الفرق قيمنا الحين من صفحة التطبيق في ${platform === "zid" ? "زد" : "سلة"} بالرابط التالي: ${platform === "zid" ? ZID_LINK : SALLA_LINK}`;
+  `تقييمك يصنع الفرق قيمنا الحين من صفحة التطبيق في ${platform === "zid" ? "زد" : "سلة"} بالرابط التالي: {{للتقييم من هنا|${platform === "zid" ? ZID_LINK : SALLA_LINK}}}`;
 
 /** zid or salla for a subscribed merchant, otherwise undefined. */
 export function ratingPlatform(list: readonly Merchant[]): "zid" | "salla" | undefined {
@@ -32,7 +32,7 @@ const UPSET = /الغاء|إلغاء|الغي|استرجاع|استرداد|فا
 const BOT = /أهلاً بك في|اهلا بك في|شكرا لتواصلك|شكراً لتواصلك|يرجى إخبارنا|كيف أقدر أساعدك اليوم/;
 
 export async function sendRatings(
-  d: { store: Store; state: RawKV; channel: Channel; merchantsOf: (chat: string) => Promise<Merchant[]>; convs?: Conversation[] },
+  d: { store: Store; state: RawKV; channel: Channel; merchantsOf: (chat: string) => Promise<Merchant[]>; hasMeeting?: (chat: string, name?: string) => Promise<boolean>; convs?: Conversation[] },
   now = Math.floor(Date.now() / 1000),
   scan = 200,
 ): Promise<string[]> {
@@ -54,6 +54,8 @@ export async function sendRatings(
     if (said.some((t) => t.includes("apps/1826") || t.includes("application/1826") || t.includes("1099604538"))) continue;
     const mine = msgs.filter((m) => m.direction === "in" && m.type !== "reaction").slice(-6).map((m) => m.text ?? m.caption ?? "");
     if (mine.some((t) => UPSET.test(t) || BOT.test(t))) continue;
+    // a meeting still ahead means the exchange is not over
+    if (await d.hasMeeting?.(c.waId, c.name).catch(() => true)) continue;
     const platform = ratingPlatform(await d.merchantsOf(c.waId).catch(() => []));
     if (!platform) continue;
     // once per merchant, ever

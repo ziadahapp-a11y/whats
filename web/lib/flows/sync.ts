@@ -127,7 +127,7 @@ export async function runOfficialFlows(fresh: StoredMessage[], io: OfficialIO) {
   // a merchant whose last message got no answer gets one more look while the window is open
   logs.push(...(await catchUpUnanswered(deps, Date.now(), { convs }).catch((e) => (console.error("catch-up failed", e), []))));
   // the rating message goes first; a chat that got it is not also nudged with a follow-up
-  const rated = await sendRatings({ store: io.store, state: io.state, channel, convs, merchantsOf: (chat) => findMerchant(io.base, chat) }).catch((e) => (console.error("ratings failed", e), [] as string[]));
+  const rated = await sendRatings({ store: io.store, state: io.state, channel, convs, merchantsOf: (chat) => findMerchant(io.base, chat), hasMeeting: (chat, name) => meetings(io.base, io.store).upcoming(chat, name) }).catch((e) => (console.error("ratings failed", e), [] as string[]));
   await sendFollowups({ store: io.store, state: io.state, channel, convs: convs.filter((c) => !rated.includes(c.waId)) }).catch((e) => console.error("follow-ups failed", e));
   await sendMeetingReminders({ base: io.base, store: io.store, state: io.state, channel }).catch((e) => console.error("meeting reminders failed", e));
   return logs;
