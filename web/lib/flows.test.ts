@@ -1381,3 +1381,40 @@ test("a merchant answering a follow-up the team opened the chat with is Zaid's t
   // Zaid's own message is never an opener
   assert.ok(!teamOpener([m("z", "out", 1000, "api"), m("q", "in", 1100)], "q"));
 });
+
+test("one rating message per subscribed merchant, 20 hours after the last message, on the right platform", async () => {
+  const { sendRatings, ratingText } = await import("./flows/rating");
+  const now = 1_800_000_000;
+  const store = new Store(new MemoryKV());
+  const state = new MemoryRawKV();
+  const sent: string[] = [];
+  const channel: Channel = { account: "official", kind: "official", sendText: async (c, t) => (sent.push(`${c}:${t}`), "x"), react: async () => {}, markRead: async () => {}, resolveTarget: (s) => s };
+  const conv = async (waId: string, inText: string, outText: string, source?: "business_app" | "api", inAgoH = 21) => {
+    await store.saveMessage({ id: `${waId}-in`, waId, direction: "in", type: "text", text: inText, timestamp: now - inAgoH * 3600 });
+    await store.saveMessage({ id: `${waId}-out`, waId, direction: "out", type: "text", text: outText, timestamp: now - inAgoH * 3600 + 60, status: "sent", source });
+  };
+  await conv("966500000001", "كيف اضيف عرض", "من لوحة زيادة ← العروض."); // zid, due
+  await conv("966500000002", "كيف اضيف عرض", "من لوحة زيادة ← العروض."); // salla, due
+  await conv("966500000003", "كيف اضيف عرض", "من لوحة زيادة ← العروض.", undefined, 10); // too early
+  await conv("966500000004", "كيف اضيف عرض", "تحب أضبطها لك؟"); // we asked a question
+  await conv("966500000005", "ابي الغاء الاشتراك", "جاري تحويلك للفريق المختص"); // upset and handed off
+  await conv("966500000006", "كيف اضيف عرض", "تمام", "business_app"); // team wrote last
+  await conv("966500000007", "كيف اضيف عرض", "من لوحة زيادة ← العروض."); // not subscribed
+  await conv("966500000008", "كيف اضيف عرض", "من لوحة زيادة ← العروض."); // unknown platform
+  const rec: Record<string, any[]> = {
+    "966500000001": [{ store: "a", platform: "Zid", status: "paid" }],
+    "966500000002": [{ store: "b", platform: "Salla", status: "trial" }],
+    "966500000003": [{ store: "c", platform: "Zid", status: "paid" }],
+    "966500000004": [{ store: "d", platform: "Zid", status: "paid" }],
+    "966500000005": [{ store: "e", platform: "Zid", status: "paid" }],
+    "966500000006": [{ store: "f", platform: "Zid", status: "paid" }],
+    "966500000007": [{ store: "g", platform: "Zid", status: "lost" }],
+    "966500000008": [{ store: "h", status: "paid" }],
+  };
+  const d = { store, state, channel, merchantsOf: async (c: string) => rec[c] ?? [] };
+  assert.deepEqual((await sendRatings(d, now)).sort(), ["966500000001", "966500000002"]);
+  assert.deepEqual(sent.sort(), [`966500000001:${ratingText("zid")}`, `966500000002:${ratingText("salla")}`]);
+  assert.match(ratingText("zid"), /في زد بالرابط التالي: https:\/\/apps\.zid\.sa\/application\/1826$/);
+  assert.match(ratingText("salla"), /في سلة بالرابط التالي: https:\/\/apps\.salla\.sa\/ar\/app\/1099604538$/);
+  assert.deepEqual(await sendRatings(d, now + 600), []); // once per merchant
+});
