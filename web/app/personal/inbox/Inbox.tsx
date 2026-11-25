@@ -12,7 +12,8 @@ type Draft = { id: string; account: string; accountLabel?: string; flowName: str
 
 const EMOJIS = ["👍", "❤️", "😂", "🙏", "✅"];
 const initial = (s: string) => [...s.replace(/^\+/, "").trim()][0] ?? "؟";
-const label = (c: { waId: string; name?: string }) => c.name || (c.waId.endsWith("@g.us") ? "مجموعة" : /^\d/.test(c.waId) ? "+" + c.waId.split("@")[0] : c.waId);
+// A profile name with no letters or digits (e.g. a lone "،") is treated as no name, so the number shows.
+const label = (c: { waId: string; name?: string }) => (c.name && /[\p{L}\p{N}]/u.test(c.name) ? c.name : c.waId.endsWith("@g.us") ? "مجموعة" : /^\d/.test(c.waId) ? "+" + c.waId.split("@")[0] : c.waId);
 
 function short(sec: number) {
   if (!sec) return "";
@@ -288,7 +289,7 @@ function App({ secret, status }: { secret: string; status: Status }) {
             <>
               <header>
                 <button type="button" className="btn ghost small only-narrow" onClick={() => setActive(null)}>← رجوع</button>
-                <h4>{thread?.name || label({ waId: active!, name: chats.find((c) => c.waId === active)?.name })}</h4>
+                <h4>{label({ waId: active!, name: thread?.name ?? chats.find((c) => c.waId === active)?.name })}</h4>
                 {(thread?.tags ?? []).map((t) => (
                   <button key={t} type="button" className="tag" title="اضغط لحذف الوسم" onClick={() => tagOp(t, true)}>{t} ×</button>
                 ))}
