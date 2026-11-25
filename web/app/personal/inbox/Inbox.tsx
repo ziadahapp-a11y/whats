@@ -305,11 +305,7 @@ function App({ secret, status }: { secret: string; status: Status }) {
                       {m.direction === "in" && active!.endsWith("@g.us") && <div className="who">{m.senderName || (m.sender ? "+" + m.sender : "")}</div>}
                       {quoted && <div className="quote">{(quoted.text ?? quoted.caption ?? `[${quoted.type}]`).slice(0, 120)}</div>}
                       {body}
-                      {["image", "video", "audio", "document", "sticker"].includes(m.type) && (
-                        <div className="muted">
-                          [{m.type}{m.filename ? `: ${m.filename}` : ""}]
-                        </div>
-                      )}
+                      {["image", "video", "audio", "document", "sticker"].includes(m.type) && <MediaBody secret={secret} account={account} message={m} />}
                       <div className="meta">
                         <time>{new Date(m.timestamp * 1000).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}</time>
                         {m.direction === "out" && m.status && <span>{m.status === "read" ? "✓✓ قُرئت" : m.status === "delivered" ? "✓✓" : m.status === "failed" ? "فشل" : m.status === "sending" ? "…" : "✓"}</span>}
@@ -380,6 +376,47 @@ function App({ secret, status }: { secret: string; status: Status }) {
 type Tpl = { name: string; language: string; category: string; body: string; params: number; header: "IMAGE" | "TEXT" | null; headerText?: string };
 
 /** Picks an approved template, fills its variables (and header image) and sends it after a cost check. */
+/** Loads a stored media message with the dashboard token and shows it: image, audio, video or a download link. */
+function MediaBody({ secret, account, message }: { secret: string; account: string; message: { id: string; type: string; filename?: string } }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    let url: string | null = null;
+    setSrc(null);
+    setFailed(false);
+    fetch(`/api/personal/media?account=${encodeURIComponent(account)}&id=${encodeURIComponent(message.id)}`, { headers: { Authorization: `Bearer ${secret}` } })
+      .then((r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        return r.blob();
+      })
+      .then((b) => {
+        if (!alive) return;
+        url = URL.createObjectURL(b);
+        setSrc(url);
+      })
+      .catch(() => {
+        if (alive) setFailed(true);
+      });
+    return () => {
+      alive = false;
+      if (url) URL.revokeObjectURL(url);
+    };
+  }, [secret, account, message.id]);
+
+  const label = `[${message.type}${message.filename ? `: ${message.filename}` : ""}]`;
+  if (failed) return <div className="muted">{label} تعذّر فتح الملف</div>;
+  if (!src) return <div className="muted">{label} …</div>;
+  if (message.type === "image" || message.type === "sticker") return <img src={src} alt={message.filename ?? message.type} style={{ maxWidth: "100%", borderRadius: 8, marginTop: 6 }} />;
+  if (message.type === "audio") return <audio controls src={src} style={{ marginTop: 6, maxWidth: "100%" }} />;
+  if (message.type === "video") return <video controls src={src} style={{ marginTop: 6, maxWidth: "100%", borderRadius: 8 }} />;
+  return (
+    <a href={src} download={message.filename ?? "file"} className="muted">
+      {label} تحميل
+    </a>
+  );
+}
+
 function TemplatePanel({ secret, account, to, onSent, onError }: { secret: string; account: string; to: string; onSent: () => Promise<void>; onError: (m: string) => void }) {
   const api = useApi<{ templates: Tpl[] }>(`/api/personal/inbox?account=${account}&view=templates`, { fresh: 60_000 });
   const [key, setKey] = useState("");
