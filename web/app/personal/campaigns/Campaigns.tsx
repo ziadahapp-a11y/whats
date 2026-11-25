@@ -229,6 +229,32 @@ function App({ secret }: { secret: string }) {
     await run("report", async () => setReport(await call<Report>(secret, `/api/personal/campaigns?id=${id}`)));
   }
 
+  /** Downloads a CSV of everyone the campaign did not deliver to: failed, accepted but not delivered, not reached yet. */
+  async function downloadUndelivered(id: string) {
+    await run("csv", async () => {
+      const r = await fetch(`/api/personal/campaigns?id=${id}&export=undelivered`, { headers: { Authorization: `Bearer ${secret}` } });
+      if (!r.ok) throw new Error(`تعذّر التحميل (${r.status})`);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `undelivered-${id.slice(0, 8)}.csv`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
+  /** Builds a dry run for tomorrow from the undelivered recipients. Sends nothing; start it from the dry-run card. */
+  async function retryUndelivered(id: string) {
+    await run(
+      "retry",
+      async () => {
+        const r = await post<DryRun>({ op: "retry_undelivered", id });
+        setDry(r);
+      },
+      "جهزنا حملة لغير الواصلين. راجعها واضغط ابدأ عند الحاجة، والتوكن ينتهي بعد 24 ساعة.",
+    );
+  }
+
   const vars = new Set([...draft.body.matchAll(/\{\{(\d+)\}\}/g)].map((m) => m[1])).size;
   function buildDraft() {
     return {
@@ -330,6 +356,10 @@ function App({ secret }: { secret: string }) {
               ))}
             </ul>
           )}
+          <div className="actions" style={{ marginTop: 8 }}>
+            <button className="btn ghost" disabled={busy === "csv"} onClick={() => void downloadUndelivered(report.id)}>تحميل غير الواصلين (CSV)</button>
+            <button className="btn solid" disabled={busy === "retry"} onClick={() => void retryUndelivered(report.id)}>حملة لغير الواصلين</button>
+          </div>
           <p className="hint">تحديثات التسليم من Meta تتأخر؛ الأرقام تزيد بعد آخر رسالة.</p>
         </section>
       )}

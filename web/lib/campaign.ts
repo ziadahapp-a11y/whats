@@ -63,6 +63,8 @@ type Campaign = {
   /** The template's header and buttons as the send has to fill them. Absent on campaigns from before media support. */
   shape?: TemplateShape;
   send?: SendOptions;
+  /** Numbers that an earlier campaign did not deliver to; the 7-day cooldown does not block them. */
+  retry?: string[];
   /** One-time token from the dry run; removed when the campaign starts. */
   confirmToken?: string;
   total: number;
@@ -347,7 +349,7 @@ type Screen = {
 };
 
 /** The full pre-send check against live data: Meta's view of the number and template, opt-outs, cooldown, capacity. */
-async function screen(deps: CampaignDeps, tpl: { name: string; language: string }, rows: readonly DryRunRow[], now: number, send?: SendOptions): Promise<Screen> {
+async function screen(deps: CampaignDeps, tpl: { name: string; language: string }, rows: readonly DryRunRow[], now: number, send?: SendOptions, retry?: ReadonlySet<string>): Promise<Screen> {
   const { graph, store } = deps;
   const phones = [...new Set(rows.map((r) => normalizeSaudiMobile(r.phone)).filter((p): p is string => !!p))];
   const [phone, info, raw, optedOut, lastMarketingAt, recent24h, active] = await Promise.all([
@@ -360,7 +362,7 @@ async function screen(deps: CampaignDeps, tpl: { name: string; language: string 
     activeCampaign(store),
   ]);
 
-  const report = preflight({ phone, template: info, language: tpl.language, rows, now, optedOut, lastMarketingAt, recent24h });
+  const report = preflight({ phone, template: info, language: tpl.language, rows, now, optedOut, lastMarketingAt, recent24h, retry });
 
   const extra: PreflightCheck[] = [];
   const parsed = raw ? templateShape((raw as any).components ?? []) : null;
@@ -393,10 +395,10 @@ export type DryRunResult = {
 };
 
 /** Screens the list and, when it passes, saves the campaign (not started) and returns its confirmation token. Sends nothing. */
-export async function createDryRun(deps: CampaignDeps, input: { template: { name: string; language: string }; rows: readonly DryRunRow[]; send?: SendOptions }): Promise<DryRunResult> {
+export async function createDryRun(deps: CampaignDeps, input: { template: { name: string; language: string }; rows: readonly DryRunRow[]; send?: SendOptions; retry?: string[] }): Promise<DryRunResult> {
   const now = (deps.now ?? Date.now)();
   const send = cleanSend(input.send);
-  const s = await screen(deps, input.template, input.rows, now, send);
+  const s = await screen(deps, input.template, input.rows, now, send, new Set(input.retry ?? []));
   const result: DryRunResult = {
     ok: s.ok,
     checks: s.checks,
@@ -425,6 +427,7 @@ export async function createDryRun(deps: CampaignDeps, input: { template: { name
     template: s.template,
     ...(s.shape ? { shape: s.shape } : {}),
     ...(send ? { send } : {}),
+    ...(input.retry?.length ? { retry: input.retry } : {}),
     confirmToken: randomUUID(),
     total,
     cursor: 0,
@@ -454,7 +457,7 @@ export async function startCampaign(deps: CampaignDeps, id: string, token: strin
   if (now - c.createdAt > TOKEN_TTL_MS) return { ok: false, error: "The dry run is older than 24 hours; run it again so the checks use current data." };
 
   const stored = (await store.mkGet<CampaignRecipient[]>(key(id, ":r"))) ?? [];
-  const s = await screen(deps, c.template, stored, now, c.send);
+  const s = await screen(deps, c.template, stored, now, c.send, new Set(c.retry ?? []));
   if (!s.ok) return { ok: false, error: "The checks no longer pass; nothing was started.", checks: s.checks.filter((x) => !x.ok) };
 
   if (!(await store.mkLock("active", 14 * 24 * 60 * 60))) return { ok: false, error: "Another campaign holds the account." };
@@ -727,6 +730,71 @@ export async function campaignReport(deps: CampaignDeps, id: string): Promise<Ca
       .slice(0, 20)
       .map((o) => ({ phone: mask(o.phone), code: o.errorCode, error: o.error })),
   };
+}
+
+export type UndeliveredRow = { phone: string; state: "failed" | "not_delivered" | "not_sent"; code?: number; error?: string };
+
+/**
+ * Every recipient of a campaign that has not reached "delivered" or "read": sends Meta refused,
+ * sends Meta accepted but never confirmed as delivered, and recipients not reached yet.
+ */
+export async function undeliveredRecipients(deps: CampaignDeps, id: string) {
+  const { store } = deps;
+  const c = await load(store, id);
+  if (!c) return null;
+  const outcomes = (await store.mkGet<Outcome[]>(key(id, ":o"))) ?? [];
+  await refreshStatuses(store, outcomes);
+  const recipients = (await store.mkGet<CampaignRecipient[]>(key(id, ":r"))) ?? [];
+  const accepted = outcomes.filter((o) => o.ok && o.messageId);
+  const msgs = await store.messagesByIds(accepted.map((o) => o.messageId!));
+  const statusById = new Map(accepted.map((o, i) => [o.messageId!, msgs[i]?.status] as const));
+  const byPhone = new Map(outcomes.map((o) => [o.phone, o] as const));
+
+  const list: UndeliveredRow[] = [];
+  const picked: CampaignRecipient[] = [];
+  for (const r of recipients) {
+    const o = byPhone.get(r.phone);
+    if (!o) {
+      list.push({ phone: r.phone, state: "not_sent" });
+    } else if (!o.ok) {
+      list.push({ phone: r.phone, state: "failed", code: o.errorCode, error: o.error });
+    } else {
+      const st = statusById.get(o.messageId!);
+      if (st === "delivered" || st === "read") continue;
+      list.push({ phone: r.phone, state: "not_delivered" });
+    }
+    picked.push(r);
+  }
+  return { campaign: c, list, recipients: picked };
+}
+
+/** A CSV (UTF-8 with BOM, opens cleanly in Excel) of the undelivered rows. */
+export function undeliveredCsv(list: readonly UndeliveredRow[]): string {
+  const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const lines = ["phone,state,error_code,error", ...list.map((r) => [r.phone, r.state, r.code, r.error].map(cell).join(","))];
+  return "﻿" + lines.join("\n");
+}
+
+/** Builds a new dry run from the undelivered recipients of a campaign. Sends nothing; the usual checks and start apply. */
+export async function retryUndelivered(deps: CampaignDeps, id: string): Promise<DryRunResult | null> {
+  const u = await undeliveredRecipients(deps, id);
+  if (!u) return null;
+  const rows: DryRunRow[] = u.recipients.map((r) => ({
+    phone: r.phone,
+    params: r.params,
+    headerParam: r.headerParam,
+    buttonParam: r.buttonParam,
+    couponParam: r.couponParam,
+    sourceRow: r.sourceRow,
+    consentSource: r.consentSource,
+    consentAt: r.consentAt,
+  }));
+  return createDryRun(deps, {
+    template: { name: u.campaign.template.name, language: u.campaign.template.language },
+    rows,
+    send: u.campaign.send,
+    retry: u.recipients.map((r) => r.phone),
+  });
 }
 
 export async function listCampaigns(deps: CampaignDeps, limit = 20): Promise<CampaignView[]> {

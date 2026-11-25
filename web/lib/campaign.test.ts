@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, startCampaign, stopCampaign, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
+import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, undeliveredRecipients, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
 import { GraphError } from "./graph";
 import { MemoryKV, Store } from "./store";
 
@@ -394,4 +394,28 @@ test("over the 24-hour cap the campaign waits, then sends the rest once the wind
   }
   assert.equal(t.g.sends.length, 260);
   assert.equal((await campaignReport(t.deps, id))?.status, "completed");
+});
+
+test("undelivered = failed, accepted but not delivered; delivered ones drop out; retry is not blocked by the cooldown", async () => {
+  const t = setup({ tier: "TIER_1K" });
+  const id = await started(t, 3);
+  t.g.failFor.set(phone(2), 131026);
+  for (let i = 0; i < 20; i++) {
+    const v = await advanceCampaign(t.deps, id, fast);
+    if (v.status === "completed") break;
+  }
+  // The first message reached the phone: it must not be sent again.
+  await t.store.updateStatus("wamid.1", "delivered");
+
+  const u = await undeliveredRecipients(t.deps, id);
+  assert.ok(u);
+  assert.deepEqual(u.list.map((r) => [r.phone, r.state]), [
+    [phone(2), "failed"],
+    [phone(3), "not_delivered"],
+  ]);
+
+  const retry = await retryUndelivered(t.deps, id);
+  assert.ok(retry);
+  assert.equal(retry.ok, true, JSON.stringify(retry.checks.filter((c) => !c.ok)));
+  assert.equal(retry.summary.accepted, 2, "phone 3 was messaged recently but is retried anyway");
 });

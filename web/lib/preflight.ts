@@ -184,6 +184,8 @@ export type RecipientContext = {
   lastMarketingAt: ReadonlyMap<string, number>;
   /** Minimum gap between two marketing messages to the same number. Default 7 days. */
   cooldownMs?: number;
+  /** Numbers whose earlier send was not delivered: the cooldown does not apply to them. */
+  retry?: ReadonlySet<string>;
   /** How many variables the template body has; every row must supply exactly this many. */
   paramCount: number;
 };
@@ -236,7 +238,7 @@ export function screenRecipients<T extends RecipientRow>(rows: readonly T[], ctx
 
     if (ctx.optedOut.has(phone)) return block(phone, "opted_out", "Number opted out or blocked the business.");
     const last = ctx.lastMarketingAt.get(phone);
-    if (last !== undefined && ctx.now - last < cooldown) {
+    if (last !== undefined && !ctx.retry?.has(phone) && ctx.now - last < cooldown) {
       const days = Math.ceil((cooldown - (ctx.now - last)) / 86_400_000);
       return block(phone, "cooldown", `Received a marketing message recently; eligible again in ${days} day(s).`);
     }
@@ -307,6 +309,7 @@ export type PreflightInput<T extends RecipientRow> = {
   /** Normalised numbers this system already messaged in the last 24 hours. */
   recent24h: ReadonlySet<string>;
   cooldownMs?: number;
+  retry?: ReadonlySet<string>;
   capacityMargin?: number;
 };
 
@@ -333,6 +336,7 @@ export function preflight<T extends RecipientRow>(input: PreflightInput<T>): Pre
     optedOut: input.optedOut,
     lastMarketingAt: input.lastMarketingAt,
     cooldownMs: input.cooldownMs,
+    retry: input.retry,
     paramCount: input.template?.paramCount ?? 0,
   });
   const capacity = checkCapacity(
