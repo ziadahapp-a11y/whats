@@ -12,7 +12,7 @@ import type { Attachment, Loaded } from "../files";
 import { extractFile } from "../kb/extract";
 import { MAX_WAITS, deleteWait, listWaits, pushLog, readQueue, saveDraft, saveWait, writeQueue } from "./storage";
 import { successors } from "./graph";
-import { answeredAfter, offHours, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, MEETING_OWN_RULE, meetingTalk, newerInbound, PLANS_RULE, teamOpener, WHATS_NEW_RULE, priceRule, logicRule, STRICT_RULE, TICKET_RULE, TEAM_ACTIVE_SECS, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
+import { answeredAfter, offHours, answersTeam, HOLD_LINE, teamPromise, CLOSING_RULE, DIRECT_RULE, dropOffer, EMAIL_RULE, FOREIGN_SCRIPT, GROUP_RULE, isAppAuto, lastTeamAt, LINK_RULE, MEETING_OWN_RULE, meetingTalk, newerInbound, PLANS_RULE, teamOpener, WHATS_NEW_RULE, BILLING_RULE, priceRule, logicRule, STRICT_RULE, TICKET_RULE, TEAM_ACTIVE_SECS, TEAM_OWNS_SECS, TEAM_WAIT_SECS, teamRepliedAt, UNSURE_LINE, UNSURE_RULE, withHours } from "./links";
 import type { Meetings } from "./meetings";
 import type { Action, Cond, Flow, Graph, LogEntry, LogStep } from "./types";
 
@@ -302,7 +302,7 @@ async function runAi(a: Extract<Action, { type: "ai" | "ai_reply" }>, x: Ctx, d:
     if (kb) system += `\n\n${KNOWLEDGE_RULES}\n\n<knowledge>\n${kb}\n</knowledge>`;
   }
   if (a.type === "ai_reply" && d.channel.kind === "official") {
-    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}\n\n${DIRECT_RULE}\n\n${PLANS_RULE}\n\n${WHATS_NEW_RULE}\n\n${priceRule(x.now)}\n\n${logicRule(x.now)}\n\n${TICKET_RULE}`;
+    system += `\n\n${LINK_RULE}\n\n${CLOSING_RULE}\n\n${UNSURE_RULE}\n\n${GROUP_RULE}\n\n${EMAIL_RULE}\n\n${STRICT_RULE}\n\n${DIRECT_RULE}\n\n${PLANS_RULE}\n\n${WHATS_NEW_RULE}\n\n${BILLING_RULE}\n\n${priceRule(x.now)}\n\n${logicRule(x.now)}\n\n${TICKET_RULE}`;
     const who = await d.merchant?.(x.chat).catch(() => "");
     if (who) system += `\n\n${who}`;
     const cal = await d.meetings?.context(x.chat, x.chatName).catch(() => "");

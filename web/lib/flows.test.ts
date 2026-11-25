@@ -1181,7 +1181,7 @@ test("merchant lookup: the sheet row for this phone becomes a <merchant> block f
   assert.equal(ix["966510655869"][0].store, "متجر نسمتي");
   assert.equal(ix["966501253332"][0].plan, "النمو الشهرية");
   const block = merchantContext(ix["966510655869"]);
-  assert.match(block, /المتجر: متجر نسمتي، المنصة: زد، الباقة: النمو الشهرية، ينتهي الاشتراك: 2026-11-25، الحالة: مشترك \(مدفوع\)/);
+  assert.match(block, /المتجر: متجر نسمتي، رقم المتجر: 147887، المنصة: زد، الباقة: النمو الشهرية، ينتهي الاشتراك: 2026-11-25، الحالة: مشترك \(مدفوع\)/);
   assert.ok(!block.includes("a@b.c"));
   assert.equal(merchantContext([]), "");
   // read once through Google Sheets, then served from the cache
@@ -1475,4 +1475,16 @@ test("a reply in the middle of a booking is Zaid's even when a team member sent 
   assert.ok(!meetingTalk(done, "g"));
   // with no booking asked, "صحيح" is not meeting talk
   assert.ok(!meetingTalk([m("x", "out", t, "المشكلة انحلت؟", "api"), m("y", "in", t + 60, "صحيح")], "y"));
+});
+
+test("the sheet's Store ID column reaches Zaid, and tax-invoice questions get the billing link with it", async () => {
+  const { buildIndex, merchantContext } = await import("./merchants");
+  const { BILLING_RULE } = await import("./flows/links");
+  const index = buildIndex([{ values: [["Store Name", "Phone", "Store ID", "Platform", "Subscription Status"], ["ديزاين ستور", "0538722050", "444226", "Zid", "paid"]] }]);
+  const m = index["966538722050"][0];
+  assert.equal(m.storeId, "444226");
+  assert.match(merchantContext([m]), /رقم المتجر: 444226/);
+  assert.match(BILLING_RULE, /dashboard\.zid\.sa\/ar-sa\/stores\/\{store\}\/finance\/billing/);
+  assert.match(BILLING_RULE, /never hand these to the team/);
+  assert.match(BILLING_RULE, /Never invent a store number/);
 });

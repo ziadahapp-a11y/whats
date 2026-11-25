@@ -14,7 +14,7 @@ const FRESH_SECS = 30 * 60;
 const RETRY_SECS = 10 * 60;
 
 /** `emails` is only for finding a merchant by email (meeting bookings); it is never shown to Zaid */
-export type Merchant = { store: string; platform?: string; plan?: string; end?: string; status?: string; emails?: string[] };
+export type Merchant = { store: string; platform?: string; plan?: string; end?: string; status?: string; emails?: string[]; storeId?: string };
 type Index = Record<string, Merchant[]>;
 
 const STATUS_AR: Record<string, string> = { paid: "مشترك (مدفوع)", trial: "فترة تجربة", inactive: "مثبّت بدون اشتراك فعّال", lost: "الاشتراك منتهي أو موقوف" };
@@ -35,14 +35,14 @@ export function buildIndex(tabs: { values?: string[][] }[]): Index {
     const [head, ...rows] = t.values ?? [];
     if (!head) continue;
     const col = (name: string) => head.findIndex((h) => String(h).trim().toLowerCase() === name.toLowerCase());
-    const c = { name: col("Store Name"), phone: col("Phone"), extra: col("Extra Phones"), email: col("Email"), xemail: col("Extra Emails"), plat: col("Platform"), plan: col("Plan"), end: col("End Date"), st: col("Subscription Status") };
+    const c = { name: col("Store Name"), phone: col("Phone"), extra: col("Extra Phones"), email: col("Email"), xemail: col("Extra Emails"), plat: col("Platform"), plan: col("Plan"), end: col("End Date"), st: col("Subscription Status"), sid: col("Store ID") };
     if (c.name < 0 || c.phone < 0) continue;
     for (const r of rows) {
       const cell = (i: number) => (i >= 0 ? String(r[i] ?? "").trim() : "");
       const store = cell(c.name);
       if (!store) continue;
       const emails = `${cell(c.email)} ${cell(c.xemail)}`.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? [];
-      const m: Merchant = { store, platform: cell(c.plat) || undefined, plan: cell(c.plan) || undefined, end: cell(c.end) || undefined, status: cell(c.st) || undefined, ...(emails.length ? { emails: [...new Set(emails)] } : {}) };
+      const m: Merchant = { store, storeId: cell(c.sid) || undefined, platform: cell(c.plat) || undefined, plan: cell(c.plan) || undefined, end: cell(c.end) || undefined, status: cell(c.st) || undefined, ...(emails.length ? { emails: [...new Set(emails)] } : {}) };
       const phones = `${cell(c.phone)} ${cell(c.extra)}`.split(/[\/,،;\s]+/).map(normPhone).filter((p): p is string => !!p);
       for (const p of new Set(phones)) (index[p] ??= []).push(m);
     }
@@ -81,7 +81,7 @@ export const MERCHANT_RULE = `<merchant> is what our records say about the merch
 /** The system-prompt block for this chat, or "" when the number is not in the sheet. */
 export function merchantContext(list: Merchant[]): string {
   if (!list.length) return "";
-  const lines = list.slice(0, 5).map((m) => `- ${[`المتجر: ${m.store}`, m.platform && `المنصة: ${m.platform}`, m.plan && `الباقة: ${m.plan}`, m.end && `ينتهي الاشتراك: ${m.end}`, m.status && `الحالة: ${STATUS_AR[m.status] ?? m.status}`].filter(Boolean).join("، ")}`);
+  const lines = list.slice(0, 5).map((m) => `- ${[`المتجر: ${m.store}`, m.storeId && `رقم المتجر: ${m.storeId}`, m.platform && `المنصة: ${m.platform}`, m.plan && `الباقة: ${m.plan}`, m.end && `ينتهي الاشتراك: ${m.end}`, m.status && `الحالة: ${STATUS_AR[m.status] ?? m.status}`].filter(Boolean).join("، ")}`);
   return `${MERCHANT_RULE}\n\n<merchant>\n${lines.join("\n")}\n</merchant>`;
 }
 
