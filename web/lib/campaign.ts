@@ -12,7 +12,7 @@
 import { randomUUID } from "node:crypto";
 import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, qualityAllowsSending, type BreakerConfig, type Outcome } from "./breaker";
 import { GraphError, type Graph } from "./graph";
-import { normalizeSaudiMobile, preflight, type BlockedRow, type PreflightCheck, type PreflightReport, type RecipientRow } from "./preflight";
+import { dailyLimit, normalizeSaudiMobile, preflight, type BlockedRow, type PreflightCheck, type PreflightReport, type RecipientRow } from "./preflight";
 import type { Store } from "./store";
 import { renderTemplateText } from "./template-text";
 
@@ -104,6 +104,9 @@ export type CampaignView = {
 const PILOT_SHARE = 0.05;
 const PILOT_MIN = 5;
 const PILOT_WAIT_MS = 60_000;
+/** How long a campaign waits before retrying after hitting the 24-hour recipient cap. */
+const CAPACITY_RETRY_MS = 30 * 60_000;
+const DAY_MS = 24 * 60 * 60 * 1000;
 const TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const BLOCKED_SAMPLE = 200;
 const STATUS_WINDOW = 400; // recent sends whose delivery status is re-read before each batch
@@ -528,6 +531,9 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
         break;
       }
 
+      // Unique recipients messaged in the last 24 hours, including sends from this call.
+      const limit = dailyLimit(info as any);
+      const windowSet = await store.recentMarketing(DAY_MS, now());
       const end = Math.min(c.cursor + batchSize, c.pilotDone ? c.total : c.pilotSize);
       const batch = recipients.slice(c.cursor, end);
       const phones = batch.map((r) => r.phone);
@@ -543,6 +549,13 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
           c.skippedBy[skip] = (c.skippedBy[skip] ?? 0) + 1;
           c.cursor++;
           continue;
+        }
+
+        // Over the 24-hour cap: stop here, keep the cursor on this recipient, and retry later.
+        if (!windowSet.has(r.phone) && windowSet.size >= limit) {
+          c.status = "waiting";
+          c.resumeAt = now() + CAPACITY_RETRY_MS;
+          break;
         }
 
         const at = now();
@@ -571,6 +584,7 @@ export async function advanceCampaign(deps: CampaignDeps, id: string, opts: Adva
           outcome = { phone: r.phone, at, ok: false, errorCode: e instanceof GraphError ? e.code : undefined, error: e instanceof Error ? e.message : String(e) };
         }
         outcomes.push(outcome);
+        if (outcome.ok) windowSet.add(r.phone);
         c.cursor++;
 
         // Judged after every message, not only failures: the failure rate starts counting at minAttempts, which a success can be the one to reach.

@@ -106,7 +106,7 @@ test("the combined report is ok only when everything passes and something can be
   const base = { phone: GOOD, template: TPL, language: "ar", now: NOW, optedOut: new Set<string>(), lastMarketingAt: new Map<string, number>(), recent24h: new Set<string>() };
   const good = preflight({ ...base, rows: [row(), row({ phone: "bad" })] });
   assert.equal(good.ok, true);
-  assert.deepEqual(good.summary, { total: 2, accepted: 1, blocked: 1, byReason: { invalid_phone: 1 }, newUnique: 1, remainingCapacity: 800 });
+  assert.deepEqual(good.summary, { total: 2, accepted: 1, blocked: 1, byReason: { invalid_phone: 1 }, newUnique: 1, remainingCapacity: 800, deferred: 0 });
 
   assert.equal(preflight({ ...base, rows: [row({ phone: "bad" })] }).ok, false, "nothing sendable");
   assert.equal(preflight({ ...base, phone: { ...GOOD, quality_rating: "YELLOW" }, rows: [row()] }).ok, false);
@@ -126,8 +126,9 @@ test("an UNKNOWN-quality number is capped at 50 new recipients per 24 hours", ()
   const rows = Array.from({ length: 51 }, (_, i) => row({ phone: `05${String(i).padStart(8, "0")}` }));
   const base = { template: TPL, language: "ar", now: NOW, optedOut: new Set<string>(), lastMarketingAt: new Map<string, number>(), recent24h: new Set<string>() };
   const unknown = preflight({ ...base, phone: { ...GOOD, quality_rating: "UNKNOWN" }, rows });
-  assert.equal(unknown.ok, false);
+  assert.equal(unknown.ok, true, "over the cap is queued, not a failure");
   assert.equal(unknown.summary.remainingCapacity, 50);
+  assert.equal(unknown.summary.deferred, 1);
   assert.equal(preflight({ ...base, phone: { ...GOOD, quality_rating: "UNKNOWN" }, rows: rows.slice(0, 50) }).ok, true);
   assert.equal(preflight({ ...base, phone: GOOD, rows }).ok, true, "no cap once GREEN");
 });

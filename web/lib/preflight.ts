@@ -316,8 +316,14 @@ export type PreflightReport<T extends RecipientRow> = {
   checks: PreflightCheck[];
   accepted: (T & { phone: string })[];
   blocked: BlockedRow[];
-  summary: { total: number; accepted: number; blocked: number; byReason: Partial<Record<BlockReason, number>>; newUnique: number; remainingCapacity: number };
+  summary: { total: number; accepted: number; blocked: number; byReason: Partial<Record<BlockReason, number>>; newUnique: number; remainingCapacity: number; deferred: number };
 };
+
+/** Unique recipients this number may message per rolling 24 hours right now (0 when the tier is unknown). */
+export function dailyLimit(info: PhoneInfo | null, margin = 0.2): number {
+  const quality = info?.quality_rating;
+  return checkCapacity(info?.messaging_limit_tier, new Set(), [], margin, quality === "UNKNOWN" ? UNKNOWN_QUALITY_DAILY_CAP : undefined).limit;
+}
 
 export function preflight<T extends RecipientRow>(input: PreflightInput<T>): PreflightReport<T> {
   const account = checkAccount(input.phone);
@@ -337,7 +343,15 @@ export function preflight<T extends RecipientRow>(input: PreflightInput<T>): Pre
     input.phone?.quality_rating === "UNKNOWN" ? UNKNOWN_QUALITY_DAILY_CAP : undefined,
   );
 
-  const checks = [...account, ...template, capacity.check];
+  // Going over the 24-hour cap no longer fails the run: the rest is sent in later windows.
+  // Only an unknown tier (capacity cannot be verified at all) still fails the check.
+  const deferred = Math.max(0, capacity.newUnique - capacity.remaining);
+  const capacityCheck: PreflightCheck =
+    capacity.limit === 0 || capacity.check.ok
+      ? capacity.check
+      : { id: "capacity", ok: true, message: `${capacity.remaining} recipient(s) go out in this 24-hour window; ${deferred} are queued for the following window(s).` };
+
+  const checks = [...account, ...template, capacityCheck];
   const byReason: Partial<Record<BlockReason, number>> = {};
   for (const b of blocked) byReason[b.reason] = (byReason[b.reason] ?? 0) + 1;
 
@@ -346,6 +360,14 @@ export function preflight<T extends RecipientRow>(input: PreflightInput<T>): Pre
     checks,
     accepted,
     blocked,
-    summary: { total: input.rows.length, accepted: accepted.length, blocked: blocked.length, byReason, newUnique: capacity.newUnique, remainingCapacity: capacity.remaining },
+    summary: {
+      total: input.rows.length,
+      accepted: accepted.length,
+      blocked: blocked.length,
+      byReason,
+      newUnique: capacity.newUnique,
+      remainingCapacity: capacity.remaining,
+      deferred,
+    },
   };
 }

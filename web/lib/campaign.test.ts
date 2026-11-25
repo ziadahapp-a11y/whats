@@ -74,9 +74,11 @@ test("a failing check returns no campaign and no token", async () => {
   const location = await createDryRun(setup({ components: [{ type: "HEADER", format: "LOCATION" }, { type: "BODY", text: "x {{1}} y" }] }).deps, { template: TEMPLATE, rows: rows(3) });
   assert.ok(location.checks.some((c) => c.id === "template.components" && !c.ok));
 
-  const small = await createDryRun(setup({ tier: "TIER_250" }).deps, { template: TEMPLATE, rows: rows(300) }); // 250 less the 20% margin is 200
-  assert.equal(small.ok, false);
-  assert.ok(small.checks.some((c) => c.id === "capacity" && !c.ok));
+  // 250 less the 20% margin is 200: the overflow is queued for later windows, not a failure.
+  const over = await createDryRun(setup({ tier: "TIER_250" }).deps, { template: TEMPLATE, rows: rows(300) });
+  assert.equal(over.ok, true);
+  assert.ok(over.checks.some((c) => c.id === "capacity" && c.ok && /queued/.test(c.message)));
+  assert.equal(over.summary.deferred, 100);
 });
 
 const RICH = [
@@ -371,4 +373,25 @@ test("the inbox keeps the rendered message, not just the template name", async (
   await advanceCampaign(t.deps, id, fast);
   const [m] = await t.store.messages(phone(1));
   assert.equal(m?.text, "هلا عميل1، عرض الصيف لك فقط");
+});
+
+test("over the 24-hour cap the campaign waits, then sends the rest once the window clears", async () => {
+  const t = setup({ tier: "TIER_250" }); // 200 per 24 hours after the 20% margin
+  const id = await started(t, 260);
+  for (let i = 0; i < 40; i++) {
+    const v = await advanceCampaign(t.deps, id, fast);
+    if (v.status === "waiting" && t.g.sends.length >= 200) break;
+  }
+  assert.equal(t.g.sends.length, 200, "the first window sends exactly the cap");
+  const held = await advanceCampaign(t.deps, id, fast);
+  assert.equal(held.status, "waiting");
+  assert.equal(t.g.sends.length, 200, "nothing more goes out while the window is full");
+
+  t.clock.t += 25 * 60 * 60 * 1000; // the first window expires
+  for (let i = 0; i < 40; i++) {
+    const v = await advanceCampaign(t.deps, id, fast);
+    if (v.status === "completed") break;
+  }
+  assert.equal(t.g.sends.length, 260);
+  assert.equal((await campaignReport(t.deps, id))?.status, "completed");
 });
