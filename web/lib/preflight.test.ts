@@ -13,9 +13,17 @@ test("Saudi mobile numbers in every spelling normalise to 9665xxxxxxxx", () => {
   for (const ok of ["0501234567", "501234567", "+966 50 123 4567", "00966501234567", "٠٥٠١٢٣٤٥٦٧", "۰۵۰۱۲۳۴۵۶۷", "966501234567.0", "9660501234567", 501234567, "(050) 123-4567"]) {
     assert.equal(normalizeSaudiMobile(ok), "966501234567", String(ok));
   }
-  for (const bad of ["0412345678", "+14155550123", "abc", "", "05012345", "96650123456789", null, undefined, {}]) {
+  for (const bad of ["0412345678", "abc", "", "05012345", "96650123456789", "0501234567890", "1234567", null, undefined, {}]) {
     assert.equal(normalizeSaudiMobile(bad), null, String(bad));
   }
+});
+
+test("international numbers that start with their country code are accepted", () => {
+  assert.equal(normalizeSaudiMobile("+14155550123"), "14155550123");
+  assert.equal(normalizeSaudiMobile("00201001234567"), "201001234567");
+  assert.equal(normalizeSaudiMobile("971501234567"), "971501234567");
+  assert.equal(normalizeSaudiMobile("+44 7911 123456"), "447911123456");
+  assert.equal(normalizeSaudiMobile("+1 (415) 555-0123"), "14155550123");
 });
 
 test("account checks fail closed", () => {
@@ -24,9 +32,10 @@ test("account checks fail closed", () => {
   const bad = (over: object) => checkAccount({ ...GOOD, ...over }).filter((c) => !c.ok).map((c) => c.id);
   assert.deepEqual(bad({ status: "PENDING" }), ["account.connected"]);
   assert.deepEqual(bad({ status: undefined }), ["account.connected"]);
-  assert.deepEqual(bad({ code_verification_status: "NOT_VERIFIED" }), ["account.verified"]);
+  assert.deepEqual(bad({ code_verification_status: "NOT_VERIFIED" }), [], "verification is not a send gate");
   assert.deepEqual(bad({ quality_rating: "YELLOW" }), ["account.quality"]);
-  assert.deepEqual(bad({ quality_rating: "UNKNOWN" }), ["account.quality"]);
+  assert.deepEqual(bad({ quality_rating: "UNKNOWN" }), [], "a not-yet-rated number may send, capped");
+  assert.deepEqual(bad({ quality_rating: undefined }), ["account.quality"]);
   assert.deepEqual(bad({ messaging_limit_tier: "TIER_BANANA" }), ["account.tier"]);
   assert.deepEqual(bad({ messaging_limit_tier: undefined }), ["account.tier"]);
 });
@@ -59,15 +68,16 @@ test("every recipient rule blocks with its own reason", () => {
       row({ phone: "0500000010", params: ["a\nb"] }), // 11 newline
       row({ phone: "0500000011", params: ["a    b"] }), // 12 four spaces
       row({ phone: "0500000012", params: ["  "] }), // 13 blank value
-      row({ phone: "+14155550123" }), // 14 not Saudi
+      row({ phone: "+14155550123" }), // 14 foreign number with country code, accepted
       row({ phone: "0500000013", consentAt: "2020-01-01" }), // 15 old consent is fine, there is no age limit
+      row({ phone: "0412345678" }), // 16 local number without a valid Saudi prefix
     ],
     c,
   );
-  assert.deepEqual(accepted.map((a) => a.phone), ["966500000001", "966500000008", "966500000013"]);
+  assert.deepEqual(accepted.map((a) => a.phone), ["966500000001", "966500000008", "14155550123", "966500000013"]);
   assert.deepEqual(
     blocked.map((b) => [b.row, b.reason]),
-    [[2, "duplicate"], [3, "opted_out"], [4, "cooldown"], [5, "no_consent_source"], [6, "no_consent_date"], [7, "invalid_consent_date"], [8, "future_consent_date"], [10, "missing_param"], [11, "bad_param"], [12, "bad_param"], [13, "missing_param"], [14, "invalid_phone"]],
+    [[2, "duplicate"], [3, "opted_out"], [4, "cooldown"], [5, "no_consent_source"], [6, "no_consent_date"], [7, "invalid_consent_date"], [8, "future_consent_date"], [10, "missing_param"], [11, "bad_param"], [12, "bad_param"], [13, "missing_param"], [16, "invalid_phone"]],
   );
 });
 
@@ -102,4 +112,22 @@ test("the combined report is ok only when everything passes and something can be
   assert.equal(preflight({ ...base, phone: { ...GOOD, quality_rating: "YELLOW" }, rows: [row()] }).ok, false);
   assert.equal(preflight({ ...base, phone: null, rows: [row()] }).ok, false);
   assert.equal(preflight({ ...base, template: null, rows: [row()] }).ok, false);
+});
+
+test("an UNKNOWN-quality number is capped at 50 new recipients per 24 hours", () => {
+  const phones = (n: number, from = 0) => Array.from({ length: n }, (_, i) => `9665${String(from + i).padStart(8, "0")}`);
+  assert.equal(checkCapacity("TIER_250", new Set(), phones(50), 0.2, 50).check.ok, true);
+  const over = checkCapacity("TIER_250", new Set(), phones(51), 0.2, 50);
+  assert.equal(over.check.ok, false);
+  assert.equal(over.limit, 50);
+  assert.equal(checkCapacity("TIER_250", new Set(phones(45, 1000)), phones(6), 0.2, 50).check.ok, false, "earlier sends count");
+  assert.equal(checkCapacity("TIER_50", new Set(), phones(40), 0.2, 50).limit, 40, "a lower tier limit still wins");
+
+  const rows = Array.from({ length: 51 }, (_, i) => row({ phone: `05${String(i).padStart(8, "0")}` }));
+  const base = { template: TPL, language: "ar", now: NOW, optedOut: new Set<string>(), lastMarketingAt: new Map<string, number>(), recent24h: new Set<string>() };
+  const unknown = preflight({ ...base, phone: { ...GOOD, quality_rating: "UNKNOWN" }, rows });
+  assert.equal(unknown.ok, false);
+  assert.equal(unknown.summary.remainingCapacity, 50);
+  assert.equal(preflight({ ...base, phone: { ...GOOD, quality_rating: "UNKNOWN" }, rows: rows.slice(0, 50) }).ok, true);
+  assert.equal(preflight({ ...base, phone: GOOD, rows }).ok, true, "no cap once GREEN");
 });

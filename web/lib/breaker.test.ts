@@ -14,9 +14,11 @@ test("error codes come out of the stored status text", () => {
   assert.equal(parseErrorCode("The 131048 appears later"), undefined);
 });
 
-test("anything but GREEN halts, including an unknown rating", () => {
+test("GREEN and a not-yet-rated UNKNOWN send; anything else halts, including a missing rating", () => {
   assert.deepEqual(evaluate([], "GREEN"), { halt: false });
-  for (const q of ["YELLOW", "RED", "UNKNOWN", undefined]) {
+  assert.deepEqual(evaluate([], "UNKNOWN"), { halt: false });
+  assert.equal(evaluate([], "UNKNOWN", { ...DEFAULT_BREAKER, probationQuality: undefined }).halt, true, "probation can be switched off");
+  for (const q of ["YELLOW", "RED", undefined, ""]) {
     const v = evaluate([], q);
     assert.equal(v.halt, true, String(q));
   }

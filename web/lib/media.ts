@@ -35,3 +35,14 @@ export function mediaProblem(mime: string, size: number): string | null {
   if (size > max) return `${kind === "image" ? "الصورة" : "الملف"} أكبر من ${max / MB} ميقا.`;
   return null;
 }
+
+const CAMPAIGN_VIDEO = ["video/mp4", "video/3gpp"];
+
+/**
+ * What the piece upload accepts: anything the inbox can attach, plus the MP4 a campaign's video
+ * header needs (16 MB). The inbox and the campaign route each check their own rules again.
+ */
+export function uploadProblem(mime: string, size: number): string | null {
+  if (CAMPAIGN_VIDEO.includes(mime)) return size > 16 * MB ? "الفيديو أكبر من 16 ميقا." : null;
+  return mediaProblem(mime, size);
+}

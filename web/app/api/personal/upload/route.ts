@@ -1,5 +1,5 @@
 import { admin, err } from "@/lib/admin";
-import { mediaProblem } from "@/lib/media";
+import { uploadProblem } from "@/lib/media";
 import { PIECE_BYTES, putPiece } from "@/lib/upload";
 
 export const dynamic = "force-dynamic";
@@ -15,7 +15,7 @@ export async function POST(req: Request) {
     let meta;
     if (piece === 0) {
       meta = { name: (p.get("name") ?? "file").slice(0, 200), mime: p.get("mime") ?? "", size: Number(p.get("size")) || 0, pieces: Number(p.get("pieces")) || 0 };
-      const problem = mediaProblem(meta.mime, meta.size);
+      const problem = uploadProblem(meta.mime, meta.size);
       if (problem) return err(problem, 400);
       if (meta.pieces !== Math.max(1, Math.ceil(meta.size / PIECE_BYTES))) return err("bad piece count", 400);
     }
