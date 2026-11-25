@@ -289,7 +289,10 @@ function App({ secret, status }: { secret: string; status: Status }) {
             <>
               <header>
                 <button type="button" className="btn ghost small only-narrow" onClick={() => setActive(null)}>← رجوع</button>
-                <h4>{label({ waId: active!, name: thread?.name ?? chats.find((c) => c.waId === active)?.name })}</h4>
+                <h4>
+                  {label({ waId: active!, name: thread?.name ?? chats.find((c) => c.waId === active)?.name })}
+                  {!active!.endsWith("@g.us") && /^\d/.test(active!) && <small dir="ltr" style={{ marginInlineStart: 8, opacity: 0.6, fontWeight: 400 }}>+{active!.split("@")[0]}</small>}
+                </h4>
                 {(thread?.tags ?? []).map((t) => (
                   <button key={t} type="button" className="tag" title="اضغط لحذف الوسم" onClick={() => tagOp(t, true)}>{t} ×</button>
                 ))}
