@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, undeliveredRecipients, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
+import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, undeliveredRecipients, undeliveredXlsx, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
 import { GraphError } from "./graph";
 import { MemoryKV, Store } from "./store";
 
@@ -417,5 +417,31 @@ test("undelivered = failed, accepted but not delivered; delivered ones drop out;
   const retry = await retryUndelivered(t.deps, id);
   assert.ok(retry);
   assert.equal(retry.ok, true, JSON.stringify(retry.checks.filter((c) => !c.ok)));
-  assert.equal(retry.summary.accepted, 2, "phone 3 was messaged recently but is retried anyway");
+  assert.equal(retry.summary.accepted, 1, "phone 3 is retried although messaged recently; the failed phone 2 is not");
+});
+
+test("a failed send is opted out for every later campaign, and the Excel export keeps phone numbers as text", async () => {
+  const t = setup({ tier: "TIER_1K" });
+  const id = await started(t, 3);
+  t.g.failFor.set(phone(2), 131026);
+  for (let i = 0; i < 20; i++) {
+    const v = await advanceCampaign(t.deps, id, fast);
+    if (v.status === "completed") break;
+  }
+  const u = await undeliveredRecipients(t.deps, id);
+  assert.ok(u);
+  const buf = await undeliveredXlsx(u.list);
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  await wb.xlsx.load(buf as any);
+  const ws = wb.getWorksheet("undelivered")!;
+  // Row 1 is the header, row 2 is phone 1 (sent, not delivered), row 3 is the failed phone 2.
+  assert.equal(typeof ws.getCell("A3").value, "string", "phone cell is text, not a number");
+  assert.equal(ws.getCell("A3").value, phone(2));
+
+  // A new dry run must not offer the failed number again, even without the retry option.
+  const dry = await createDryRun(t.deps, { template: TEMPLATE, rows: rows(3) });
+  assert.equal(dry.summary.byReason.opted_out, 1, "the failed number");
+  assert.equal(dry.summary.byReason.cooldown, 2, "the two messaged numbers are still under the 7-day cooldown");
+  assert.equal(dry.summary.accepted, 0);
 });

@@ -229,7 +229,7 @@ function App({ secret }: { secret: string }) {
     await run("report", async () => setReport(await call<Report>(secret, `/api/personal/campaigns?id=${id}`)));
   }
 
-  /** Downloads a CSV of everyone the campaign did not deliver to: failed, accepted but not delivered, not reached yet. */
+  /** Downloads an Excel file of everyone the campaign did not deliver to: failed, accepted but not delivered, not reached yet. */
   async function downloadUndelivered(id: string) {
     await run("csv", async () => {
       const r = await fetch(`/api/personal/campaigns?id=${id}&export=undelivered`, { headers: { Authorization: `Bearer ${secret}` } });
@@ -237,7 +237,7 @@ function App({ secret }: { secret: string }) {
       const url = URL.createObjectURL(await r.blob());
       const a = document.createElement("a");
       a.href = url;
-      a.download = `undelivered-${id.slice(0, 8)}.csv`;
+      a.download = `undelivered-${id.slice(0, 8)}.xlsx`;
       a.click();
       URL.revokeObjectURL(url);
     });
@@ -357,7 +357,7 @@ function App({ secret }: { secret: string }) {
             </ul>
           )}
           <div className="actions" style={{ marginTop: 8 }}>
-            <button className="btn ghost" disabled={busy === "csv"} onClick={() => void downloadUndelivered(report.id)}>تحميل غير الواصلين (CSV)</button>
+            <button className="btn ghost" disabled={busy === "csv"} onClick={() => void downloadUndelivered(report.id)}>تحميل غير الواصلين (Excel)</button>
             <button className="btn solid" disabled={busy === "retry"} onClick={() => void retryUndelivered(report.id)}>حملة لغير الواصلين</button>
           </div>
           <p className="hint">تحديثات التسليم من Meta تتأخر؛ الأرقام تزيد بعد آخر رسالة.</p>

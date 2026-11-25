@@ -10,6 +10,7 @@
 // campaign that has been started with its dry-run token.
 
 import { randomUUID } from "node:crypto";
+import ExcelJS from "exceljs";
 import { DEFAULT_BREAKER, HALT_CODES, evaluate, parseErrorCode, qualityAllowsSending, type BreakerConfig, type Outcome } from "./breaker";
 import { GraphError, type Graph } from "./graph";
 import { dailyLimit, normalizeSaudiMobile, preflight, type BlockedRow, type PreflightCheck, type PreflightReport, type RecipientRow } from "./preflight";
@@ -394,10 +395,32 @@ export type DryRunResult = {
   blockedTruncated: boolean;
 };
 
+/**
+ * Opts out every number whose send failed in any earlier campaign, so no later campaign or retry sends to it.
+ * Runs before each dry run and each start. Returns how many numbers were newly saved.
+ */
+async function suppressFailedSends(store: Store): Promise<number> {
+  const ids = (await store.mkGet<string[]>("camp:ids")) ?? [];
+  const failed = new Map<string, number>();
+  for (const id of ids) {
+    const outcomes = (await store.mkGet<Outcome[]>(key(id, ":o"))) ?? [];
+    for (const o of outcomes) if (!o.ok) failed.set(o.phone, o.errorCode ?? 0);
+  }
+  const already = await store.optedOut([...failed.keys()]);
+  let saved = 0;
+  for (const [phone, code] of failed) {
+    if (already.has(phone)) continue;
+    await store.recordOptOut(phone, `send failed${code ? ` (${code})` : ""}`);
+    saved++;
+  }
+  return saved;
+}
+
 /** Screens the list and, when it passes, saves the campaign (not started) and returns its confirmation token. Sends nothing. */
 export async function createDryRun(deps: CampaignDeps, input: { template: { name: string; language: string }; rows: readonly DryRunRow[]; send?: SendOptions; retry?: string[] }): Promise<DryRunResult> {
   const now = (deps.now ?? Date.now)();
   const send = cleanSend(input.send);
+  await suppressFailedSends(deps.store);
   const s = await screen(deps, input.template, input.rows, now, send, new Set(input.retry ?? []));
   const result: DryRunResult = {
     ok: s.ok,
@@ -457,6 +480,7 @@ export async function startCampaign(deps: CampaignDeps, id: string, token: strin
   if (now - c.createdAt > TOKEN_TTL_MS) return { ok: false, error: "The dry run is older than 24 hours; run it again so the checks use current data." };
 
   const stored = (await store.mkGet<CampaignRecipient[]>(key(id, ":r"))) ?? [];
+  await suppressFailedSends(store);
   const s = await screen(deps, c.template, stored, now, c.send, new Set(c.retry ?? []));
   if (!s.ok) return { ok: false, error: "The checks no longer pass; nothing was started.", checks: s.checks.filter((x) => !x.ok) };
 
@@ -768,11 +792,22 @@ export async function undeliveredRecipients(deps: CampaignDeps, id: string) {
   return { campaign: c, list, recipients: picked };
 }
 
-/** A CSV (UTF-8 with BOM, opens cleanly in Excel) of the undelivered rows. */
-export function undeliveredCsv(list: readonly UndeliveredRow[]): string {
-  const cell = (v: unknown) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-  const lines = ["phone,state,error_code,error", ...list.map((r) => [r.phone, r.state, r.code, r.error].map(cell).join(","))];
-  return "﻿" + lines.join("\n");
+/** An Excel file of the undelivered rows. Phone numbers are stored as text, so Excel does not turn them into 9.66E+11. */
+export async function undeliveredXlsx(list: readonly UndeliveredRow[]): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("undelivered");
+  ws.columns = [
+    { header: "phone", key: "phone", width: 18 },
+    { header: "state", key: "state", width: 16 },
+    { header: "error_code", key: "code", width: 12 },
+    { header: "error", key: "error", width: 60 },
+  ];
+  ws.getColumn("phone").numFmt = "@";
+  for (const r of list) {
+    ws.addRow({ phone: String(r.phone), state: r.state, code: r.code ?? null, error: r.error ?? "" });
+  }
+  ws.getRow(1).font = { bold: true };
+  return Buffer.from(await wb.xlsx.writeBuffer());
 }
 
 /** Builds a new dry run from the undelivered recipients of a campaign. Sends nothing; the usual checks and start apply. */
