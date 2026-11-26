@@ -49,7 +49,9 @@ export function cleanSettings(s: Partial<Settings>): Settings {
 /** Stored settings keep title, timezone, notice and look-ahead; the slot hours and days always come from MEETING_SLOTS, so a stale stored value can not offer a wrong time. */
 export async function getSettings(base: RawKV): Promise<Settings> {
   try {
-    return cleanSettings({ ...JSON.parse((await base.get(SETTINGS)) ?? "{}"), ...MEETING_SLOTS });
+    const stored = cleanSettings({ ...JSON.parse((await base.get(SETTINGS)) ?? "{}"), ...MEETING_SLOTS });
+    // at least 12 hours ahead, whatever a stored value says
+    return { ...stored, noticeHours: Math.max(12, stored.noticeHours) };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -106,6 +108,8 @@ export function freeSlots(s: Settings, busy: Busy[], now: number, max = 8): numb
   const gap = s.gap * 60000;
   const earliest = now + s.noticeHours * 3600000;
   for (let i = 0; i <= s.aheadDays && out.length < max; i++) {
+    // never today: a meeting is booked for a later day than the day it is booked on
+    if (i === 0) continue;
     const day = localDay(now + i * 86400000, s.tz);
     if (!s.days.includes(day.weekday)) continue;
     const open = atLocal(day.y, day.m, day.d, s.start, s.tz);

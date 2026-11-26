@@ -832,15 +832,15 @@ test("free slots respect Riyadh working hours, notice, gaps and busy time", asyn
   const { freeSlots, localIso, cleanSettings, atLocal, spread } = await import("./gcal");
   const s = cleanSettings({ days: [0, 1, 2, 3, 4], start: "10:00", end: "12:00", minutes: 30, gap: 15, noticeHours: 2, aheadDays: 2, tz: "Asia/Riyadh" });
   // Thursday 29 Oct 2026, 08:30 Riyadh (05:30Z)
-  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const now = Date.UTC(2026, 9, 28, 5, 30);
   assert.equal(atLocal(2026, 10, 29, "10:30", "Asia/Riyadh"), Date.UTC(2026, 9, 29, 7, 30));
   const busy = [{ start: Date.UTC(2026, 9, 29, 8, 30), end: Date.UTC(2026, 9, 29, 9, 0) }]; // 11:30-12:00 local
   const slots = freeSlots(s, busy, now).map((t) => localIso(t, s.tz));
-  // slots step 30+15 from 10:00: 10:00 is inside the 2h notice, 11:30 is busy; Fri/Sat are off; Sunday is past aheadDays
-  assert.deepEqual(slots, ["2026-10-29T10:45"]);
+  // slots step 30+15 from 10:00: 11:30 is busy; Fri/Sat are off; today (28 Oct) is never offered
+  assert.deepEqual(slots, ["2026-10-29T10:00", "2026-10-29T10:45"]);
   const wide = cleanSettings({ ...s, aheadDays: 4, end: "16:00" });
   const offer = spread(freeSlots(wide, [], now, 60), wide.tz).map((t) => localIso(t, wide.tz));
-  assert.deepEqual(offer, ["2026-10-29T10:45", "2026-10-29T15:15", "2026-11-01T10:00", "2026-11-01T15:15", "2026-11-02T10:00", "2026-11-02T15:15"]);
+  assert.deepEqual(offer, ["2026-10-29T10:00", "2026-10-29T15:15", "2026-11-01T10:00", "2026-11-01T15:15"]);
 });
 
 test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to the team", async () => {
@@ -848,7 +848,7 @@ test("a [[BOOK]] marker books a free slot; a taken or unknown time hands over to
   const base = new MemoryRawKV();
   await base.set("meta:gcal:token", JSON.stringify({ refresh: "r", email: "team@ziadah.app" }));
   await base.set("meta:gcal:settings", JSON.stringify({ noticeHours: 2 }));
-  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const now = Date.UTC(2026, 9, 28, 5, 30);
   const booked: any[] = [];
   const cal: any = { busy: async () => [], book: async (o: any) => (booked.push(o), { id: "e1", start: o.start, end: o.end, meet: "https://meet.google.com/abc-defg-hij" }) };
   const m = meetings(base, undefined, () => now, cal);
@@ -879,7 +879,7 @@ test("the merchant's store link goes into the meeting details", async () => {
   await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
   await base.set("meta:gcal:settings", JSON.stringify({ noticeHours: 2 }));
   const store = new Store(new MemoryKV());
-  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const now = Date.UTC(2026, 9, 28, 5, 30);
   const booked: any[] = [];
   const cal: any = { busy: async () => [], events: async () => [], book: async (o: any) => (booked.push(o), { id: "e" + booked.length, start: o.start, end: o.end }) };
   const m = meetings(base, store, () => now, cal);
@@ -899,7 +899,7 @@ test("a merchant who already has a meeting gets its time and link, never a secon
   const base = new MemoryRawKV();
   await base.set("meta:gcal:token", JSON.stringify({ refresh: "r" }));
   const store = new Store(new MemoryKV());
-  const now = Date.UTC(2026, 9, 29, 5, 30);
+  const now = Date.UTC(2026, 9, 28, 5, 30);
   const start = Date.UTC(2026, 9, 29, 11, 0); // 14:00 Riyadh
   // the team added it by hand: no guest, no phone, no link, only the store name in the title
   const team = { id: "t1", start, end: start + 1800000, summary: "اجتماع متجر عسل البركة", text: "\n" };
@@ -1487,4 +1487,16 @@ test("the sheet's Store ID column reaches Zaid, and tax-invoice questions get th
   assert.match(BILLING_RULE, /dashboard\.zid\.sa\/ar-sa\/stores\/\{store\}\/finance\/billing/);
   assert.match(BILLING_RULE, /never hand these to the team/);
   assert.match(BILLING_RULE, /Never invent a store number/);
+});
+
+test("meetings are never offered for today, and at least 12 hours ahead whatever is stored", async () => {
+  const { getSettings, freeSlots, localIso } = await import("./gcal");
+  const base = new MemoryRawKV();
+  await base.set("meta:gcal:settings", JSON.stringify({ noticeHours: 1 }));
+  const s = await getSettings(base);
+  assert.equal(s.noticeHours, 12);
+  const now = Date.UTC(2026, 10, 26, 9, 26); // Thursday 26 Nov, 12:26 Riyadh
+  const slots = freeSlots(s, [], now, 60).map((t) => localIso(t, s.tz));
+  assert.ok(slots.every((x) => !x.startsWith("2026-11-26")));
+  assert.ok(slots.includes("2026-11-30T14:30")); // Monday
 });
