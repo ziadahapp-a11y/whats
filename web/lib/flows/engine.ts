@@ -676,6 +676,27 @@ export function triggerMatches(flow: Flow, m: StoredMessage, now: number): boole
   return true;
 }
 
+// One message at a time per chat, across runs. Tags are read and written inside processMessage, so two runs
+// for the same chat (two "تم" in the same second) would otherwise both pass a flow's tag check before either saves.
+// Returns null when the chat stays locked for a few seconds; the caller keeps the message queued.
+const LOCK_TRIES = 12, LOCK_WAIT_MS = 250, LOCK_TTL_S = 120;
+async function withChatLock<T>(d: EngineDeps, chat: string, fn: () => Promise<T>): Promise<T | null> {
+  const key = `flow:lock:${chat}`;
+  const token = randomBytes(8).toString("hex");
+  for (let i = 0; i < LOCK_TRIES; i++) {
+    await d.state.set(key, token, { ex: LOCK_TTL_S, nx: true });
+    if ((await d.state.get(key)) === token) {
+      try {
+        return await fn();
+      } finally {
+        if ((await d.state.get(key)) === token) await d.state.del(key);
+      }
+    }
+    await new Promise((r) => setTimeout(r, LOCK_WAIT_MS));
+  }
+  return null;
+}
+
 async function processMessage(m: StoredMessage, d: EngineDeps, now: number): Promise<LogEntry[]> {
   const logs: LogEntry[] = [];
   const candidates = d.flows.filter((f) => triggerMatches(f, m, now));
@@ -782,7 +803,10 @@ export async function runFlows(d: EngineDeps, fresh: StoredMessage[] = [], now =
     const m = byId.get(ids[i]) ?? (await d.store.getMessage(ids[i]));
     if (!m) continue;
     try {
-      logs.push(...(await processMessage(m, d, now)));
+      // another run is handling this chat right now: keep the message queued instead of racing it
+      const got = await withChatLock(d, m.waId, () => processMessage(m, d, now));
+      if (got === null) remaining.push(ids[i]);
+      else logs.push(...got);
     } catch (e) {
       console.error("flow failed", e);
     }

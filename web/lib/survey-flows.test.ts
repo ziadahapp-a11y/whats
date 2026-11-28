@@ -97,8 +97,7 @@ test("a failing AI answer sends nothing to the merchant; the survey stays on the
   assert.ok(logs.length > 0, "the run is logged");
 });
 
-// Known gap: both runs read the tags before either saves them, so two intros can go out. Fix needs approval.
-test("two 'تم' arriving together start the survey once", { todo: "race: both runs pass the start check before tags are saved" }, async () => {
+test("two 'تم' arriving together start the survey once", async () => {
   const { deps, sent } = live();
   const a = incoming("t1", "تم");
   const b = incoming("t2", "تم ✅", 1);
