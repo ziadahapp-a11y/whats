@@ -61,7 +61,8 @@ function App({ secret, status }: { secret: string; status: Status }) {
   }, [q]);
 
   // Cached and polled gently: the cache refreshes whenever a sync, flow or MCP call stores something.
-  const chatsApi = useApi<{ chats: Chat[]; accounts: Account[]; kind: "personal" | "official" }>(`/api/personal/inbox?account=${account}&q=${encodeURIComponent(dq)}`, { fresh: 30_000, poll: 60_000 });
+  const [chatLimit, setChatLimit] = useState(60);
+  const chatsApi = useApi<{ chats: Chat[]; accounts: Account[]; kind: "personal" | "official" }>(`/api/personal/inbox?account=${account}&q=${encodeURIComponent(dq)}&limit=${chatLimit}`, { fresh: 30_000, poll: 60_000 });
   const draftsApi = useApi<{ drafts: Draft[] }>("/api/personal/drafts", { poll: 60_000 });
   const threadApi = useApi<Thread>(active ? `/api/personal/inbox?account=${account}&view=messages&chat=${encodeURIComponent(active)}` : null, { fresh: 15_000, poll: 60_000 });
   const chats = chatsApi.data?.chats ?? [];
@@ -260,6 +261,11 @@ function App({ secret, status }: { secret: string; status: Status }) {
                   </button>
                 </li>
               ))}
+              {chatsApi.data && !dq && chats.length >= chatLimit && chatLimit < 200 && (
+                <li style={{ textAlign: "center", padding: "10px 0" }}>
+                  <button type="button" className="btn ghost small" onClick={() => setChatLimit((n) => Math.min(200, n + 60))}>عرض محادثات أقدم</button>
+                </li>
+              )}
             </ul>
           ) : (
             <ul className="chatlist">
