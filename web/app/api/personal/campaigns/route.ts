@@ -1,5 +1,5 @@
 import { admin, err } from "@/lib/admin";
-import { advanceCampaign, campaignReport, createDryRun, listCampaigns, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, templateShape, undeliveredRecipients, undeliveredXlsx, type MediaKind, type SendOptions } from "@/lib/campaign";
+import { advanceCampaign, campaignReport, createDryRun, listCampaigns, sendLog, sendLogXlsx, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, templateShape, undeliveredRecipients, undeliveredXlsx, type MediaKind, type SendOptions } from "@/lib/campaign";
 import { GraphError } from "@/lib/graph";
 import { loadUpload, saveUpload, storageProblem, submitTemplate } from "@/lib/marketing";
 import { normalizeSaudiMobile } from "@/lib/preflight";
@@ -46,6 +46,13 @@ export async function GET(req: Request) {
         headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="undelivered-${id.slice(0, 8)}.xlsx"` },
       });
     }
+    if (url.searchParams.get("export") === "log") {
+      // One row per recipient: every send, its result and its latest delivery status. No id = every campaign.
+      const rows = await sendLog({ graph, store }, id ? [id] : undefined);
+      return new Response(new Uint8Array(await sendLogXlsx(rows)), {
+        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="send-log-${id ? id.slice(0, 8) : "all"}.xlsx"` },
+      });
+    }
     if (id) {
       const r = await campaignReport({ graph, store }, id);
       return r ? Response.json(r) : fail("Campaign not found.", 404);
@@ -54,7 +61,7 @@ export async function GET(req: Request) {
     const [number, templates, campaigns] = await Promise.all([
       graph.phoneInfo().then((p: any) => ({ ok: true as const, ...p })).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) })),
       graph.listTemplates(undefined, 100).then((t) => ({ ok: true as const, data: t.data as any[] })).catch((e) => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) })),
-      listCampaigns({ graph, store }, 20),
+      listCampaigns({ graph, store }, 200),
     ]);
     return Response.json({
       number,

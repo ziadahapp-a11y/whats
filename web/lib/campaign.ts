@@ -479,7 +479,7 @@ export async function createDryRun(deps: CampaignDeps, input: { template: { name
   await deps.store.mkSet(key(id, ":r"), recipients);
   await save(deps.store, c, []);
   const ids = (await deps.store.mkGet<string[]>("camp:ids")) ?? [];
-  await deps.store.mkSet("camp:ids", [id, ...ids].slice(0, 50));
+  await deps.store.mkSet("camp:ids", [id, ...ids].slice(0, 200));
   return { ...result, campaignId: id, confirmToken: c.confirmToken, pilotSize: c.pilotSize };
 }
 
@@ -745,6 +745,88 @@ export type CampaignReport = CampaignView & {
   /** phone numbers are masked */
   failureSample: { phone: string; code?: number; error?: string }[];
 };
+
+export type LogRow = {
+  campaign: string;
+  template: string;
+  createdAt: number;
+  phone: string;
+  status: "read" | "delivered" | "sent" | "failed" | "not_sent";
+  messageId?: string;
+  errorCode?: number;
+  error?: string;
+  at?: number;
+};
+
+/**
+ * Every recipient of the given campaigns (all of them when no id is given), one row each: the send result,
+ * the latest delivery status, and "not_sent" for recipients the campaign never reached.
+ */
+export async function sendLog(deps: CampaignDeps, only?: string[]): Promise<LogRow[]> {
+  const { store } = deps;
+  const ids = only ?? ((await store.mkGet<string[]>("camp:ids")) ?? []);
+  const rows: LogRow[] = [];
+  for (const id of ids) {
+    const c = await load(store, id);
+    if (!c) continue;
+    const outcomes = (await store.mkGet<Outcome[]>(key(id, ":o"))) ?? [];
+    await refreshStatuses(store, outcomes);
+    const withMsg = outcomes.filter((o) => o.ok && o.messageId);
+    const msgs = await store.messagesByIds(withMsg.map((o) => o.messageId!));
+    const statusOf = new Map(withMsg.map((o, i) => [o.messageId!, msgs[i]?.status]));
+    const tried = new Set<string>();
+    for (const o of outcomes) {
+      tried.add(o.phone);
+      const s = o.ok ? statusOf.get(o.messageId!) : undefined;
+      rows.push({
+        campaign: id,
+        template: c.template.name,
+        createdAt: c.createdAt,
+        phone: o.phone,
+        status: !o.ok ? "failed" : s === "read" || s === "delivered" ? s : "sent",
+        messageId: o.messageId,
+        errorCode: o.errorCode,
+        error: o.error,
+        at: o.at,
+      });
+    }
+    const recipients = (await store.mkGet<CampaignRecipient[]>(key(id, ":r"))) ?? [];
+    for (const r of recipients) if (!tried.has(r.phone)) rows.push({ campaign: id, template: c.template.name, createdAt: c.createdAt, phone: r.phone, status: "not_sent" });
+  }
+  return rows;
+}
+
+export async function sendLogXlsx(rows: readonly LogRow[]): Promise<Buffer> {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("send_log");
+  ws.columns = [
+    { header: "campaign", key: "campaign", width: 38 },
+    { header: "template", key: "template", width: 24 },
+    { header: "created", key: "created", width: 24 },
+    { header: "phone", key: "phone", width: 18 },
+    { header: "status", key: "status", width: 12 },
+    { header: "sent_at", key: "at", width: 24 },
+    { header: "error_code", key: "code", width: 12 },
+    { header: "error", key: "error", width: 60 },
+    { header: "message_id", key: "mid", width: 40 },
+  ];
+  ws.getColumn("phone").numFmt = "@";
+  for (const r of rows) {
+    ws.addRow({
+      campaign: r.campaign,
+      template: r.template,
+      created: new Date(r.createdAt).toISOString(),
+      phone: String(r.phone),
+      status: r.status,
+      at: r.at ? new Date(r.at).toISOString() : "",
+      code: r.errorCode ?? null,
+      error: r.error ?? "",
+      mid: r.messageId ?? "",
+    });
+  }
+  ws.getRow(1).font = { bold: true };
+  return Buffer.from(await wb.xlsx.writeBuffer());
+}
 
 export async function campaignReport(deps: CampaignDeps, id: string): Promise<CampaignReport | null> {
   const { store } = deps;

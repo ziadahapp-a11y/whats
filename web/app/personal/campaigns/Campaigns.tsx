@@ -243,6 +243,21 @@ function App({ secret }: { secret: string }) {
     });
   }
 
+  /** Downloads one row per recipient with the send result and delivery status. No id downloads every campaign. */
+  async function downloadLog(id?: string) {
+    await run("log", async () => {
+      const q = id ? `&id=${id}` : "";
+      const r = await fetch(`/api/personal/campaigns?export=log${q}`, { headers: { Authorization: `Bearer ${secret}` } });
+      if (!r.ok) throw new Error(`تعذّر التحميل (${r.status})`);
+      const url = URL.createObjectURL(await r.blob());
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `send-log-${id ? id.slice(0, 8) : "all"}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+  }
+
   /** Builds a dry run for tomorrow from the undelivered recipients. Sends nothing; start it from the dry-run card. */
   async function retryUndelivered(id: string) {
     await run(
@@ -607,6 +622,7 @@ function App({ secret }: { secret: string }) {
 
           <section className="card">
             <h3>الحملات السابقة</h3>
+            <button className="btn ghost small" disabled={busy === "log"} onClick={() => void downloadLog()}>تحميل سجل كل الحملات (Excel)</button>
             {!data && <div className="skel" style={{ height: 80 }} />}
             {data?.campaigns.length === 0 && <State title="ما فيه حملات بعد">ارفع ملف عملاء وافحصه لتبدأ.</State>}
             <ul className="list">
@@ -615,6 +631,7 @@ function App({ secret }: { secret: string }) {
                   <div className="grow"><strong dir="ltr">{c.template.name}</strong><span className="sub">{c.sent} أُرسلت · {c.failed} فشلت · من {c.total}</span></div>
                   <span className={`status ${tone(c.status)}`}>{STATUS[c.status] ?? c.status}</span>
                   <button className="btn ghost small" disabled={busy === "report"} onClick={() => void loadReport(c.id)}>تقرير</button>
+                  <button className="btn ghost small" disabled={busy === "log"} onClick={() => void downloadLog(c.id)}>سجل الإرسال (Excel)</button>
                 </li>
               ))}
             </ul>

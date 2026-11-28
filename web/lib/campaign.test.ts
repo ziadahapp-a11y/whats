@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, undeliveredRecipients, undeliveredXlsx, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
+import { advanceCampaign, campaignReport, createDryRun, resumeCampaign, retryUndelivered, startCampaign, stopCampaign, undeliveredRecipients, undeliveredXlsx, sendLog, sendLogXlsx, unsupportedReason, type CampaignDeps, type DryRunRow } from "./campaign";
 import { GraphError } from "./graph";
 import { MemoryKV, Store } from "./store";
 
@@ -469,4 +469,21 @@ test("131049 holds the number for 12 hours; 132001 records nothing", async () =>
   // The hold blocks the dry run; the 132001 number is not blocked by the failure.
   assert.ok(dry.blocked.some((b) => b.phone === held && b.reason === "cooldown"), "held number is blocked");
   assert.ok(!dry.blocked.some((b) => b.phone === template && b.reason !== "cooldown"), "template-fault number is not blocked");
+});
+
+test("the send log has one row per recipient with its result, across every campaign", async () => {
+  const t = setup({ tier: "TIER_1K" });
+  const id = await started(t, 3);
+  t.g.failFor.set(phone(2), 131026);
+  for (let i = 0; i < 20; i++) {
+    const v = await advanceCampaign(t.deps, id, fast);
+    if (v.status === "completed") break;
+  }
+  const rows = (await sendLog(t.deps)).filter((r) => r.campaign === id);
+  assert.deepEqual(rows.map((r) => [r.phone, r.status]).sort(), [[phone(1), "sent"], [phone(2), "failed"], [phone(3), "sent"]].sort());
+  assert.equal(rows.find((r) => r.phone === phone(2))?.errorCode, 131026);
+  const xlsx = await sendLogXlsx(rows);
+  assert.ok(xlsx.length > 0);
+  const onlyThis = await sendLog(t.deps, [id]);
+  assert.equal(onlyThis.length, rows.length);
 });
