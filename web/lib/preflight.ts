@@ -180,6 +180,8 @@ export type RecipientContext = {
   now: number;
   /** Normalised numbers that opted out or blocked the business. */
   optedOut: ReadonlySet<string>;
+  /** Normalised numbers under a temporary hold after a failed send. Not lifted by a retry. */
+  held?: ReadonlySet<string>;
   /** Normalised number to the time (ms) of the last marketing message sent to it. */
   lastMarketingAt: ReadonlyMap<string, number>;
   /** Minimum gap between two marketing messages to the same number. Default 7 days. */
@@ -237,6 +239,7 @@ export function screenRecipients<T extends RecipientRow>(rows: readonly T[], ctx
     if (consent.at.getTime() > ctx.now) return block(phone, "future_consent_date", "Consent date is in the future.");
 
     if (ctx.optedOut.has(phone)) return block(phone, "opted_out", "Number opted out or blocked the business.");
+    if (ctx.held?.has(phone)) return block(phone, "cooldown", "A recent send to this number failed; it is held for a while.");
     const last = ctx.lastMarketingAt.get(phone);
     if (last !== undefined && !ctx.retry?.has(phone) && ctx.now - last < cooldown) {
       const days = Math.ceil((cooldown - (ctx.now - last)) / 86_400_000);
@@ -305,6 +308,7 @@ export type PreflightInput<T extends RecipientRow> = {
   rows: readonly T[];
   now: number;
   optedOut: ReadonlySet<string>;
+  held?: ReadonlySet<string>;
   lastMarketingAt: ReadonlyMap<string, number>;
   /** Normalised numbers this system already messaged in the last 24 hours. */
   recent24h: ReadonlySet<string>;
@@ -334,6 +338,7 @@ export function preflight<T extends RecipientRow>(input: PreflightInput<T>): Pre
   const { accepted, blocked } = screenRecipients(input.rows, {
     now: input.now,
     optedOut: input.optedOut,
+    held: input.held,
     lastMarketingAt: input.lastMarketingAt,
     cooldownMs: input.cooldownMs,
     retry: input.retry,

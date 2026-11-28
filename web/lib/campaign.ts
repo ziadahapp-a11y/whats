@@ -353,7 +353,7 @@ type Screen = {
 async function screen(deps: CampaignDeps, tpl: { name: string; language: string }, rows: readonly DryRunRow[], now: number, send?: SendOptions, retry?: ReadonlySet<string>): Promise<Screen> {
   const { graph, store } = deps;
   const phones = [...new Set(rows.map((r) => normalizeSaudiMobile(r.phone)).filter((p): p is string => !!p))];
-  const [phone, info, raw, optedOut, lastMarketingAt, recent24h, active] = await Promise.all([
+  const [phone, info, raw, optedOut, lastMarketingAt, recent24h, active, held] = await Promise.all([
     settle(() => graph.phoneInfo()),
     settle(() => graph.getTemplateInfo(tpl.name, tpl.language)),
     settle(() => graph.getTemplate(tpl.name, tpl.language)),
@@ -361,9 +361,10 @@ async function screen(deps: CampaignDeps, tpl: { name: string; language: string 
     store.lastMarketing(phones),
     store.recentMarketing(24 * 60 * 60 * 1000, now),
     activeCampaign(store),
+    store.heldPhones(phones, now),
   ]);
 
-  const report = preflight({ phone, template: info, language: tpl.language, rows, now, optedOut, lastMarketingAt, recent24h, retry });
+  const report = preflight({ phone, template: info, language: tpl.language, rows, now, optedOut, held, lastMarketingAt, recent24h, retry });
 
   const extra: PreflightCheck[] = [];
   const parsed = raw ? templateShape((raw as any).components ?? []) : null;
@@ -399,18 +400,33 @@ export type DryRunResult = {
  * Opts out every number whose send failed in any earlier campaign, so no later campaign or retry sends to it.
  * Runs before each dry run and each start. Returns how many numbers were newly saved.
  */
-async function suppressFailedSends(store: Store): Promise<number> {
+// Meta codes that say something about the recipient's side: a hold of this many hours from the failed send.
+const HOLD_HOURS: Record<number, number> = { 131049: 12, 130472: 24 };
+// 132001 is a template fault, not a recipient fault: nothing is recorded, so the retry after the template fix can reach the number.
+const TEMPLATE_FAULT = new Set([132001]);
+
+// Failed numbers: a permanent opt-out for undeliverable and unknown codes, a timed hold for the codes above.
+async function suppressFailedSends(store: Store, now: number): Promise<number> {
   const ids = (await store.mkGet<string[]>("camp:ids")) ?? [];
-  const failed = new Map<string, number>();
+  const failed = new Map<string, { code: number; at: number }>();
   for (const id of ids) {
     const outcomes = (await store.mkGet<Outcome[]>(key(id, ":o"))) ?? [];
-    for (const o of outcomes) if (!o.ok) failed.set(o.phone, o.errorCode ?? 0);
+    for (const o of outcomes) {
+      if (o.ok) continue;
+      const prev = failed.get(o.phone);
+      if (!prev || o.at > prev.at) failed.set(o.phone, { code: o.errorCode ?? 0, at: o.at });
+    }
   }
   const already = await store.optedOut([...failed.keys()]);
   let saved = 0;
-  for (const [phone, code] of failed) {
-    if (already.has(phone)) continue;
-    await store.recordOptOut(phone, `send failed${code ? ` (${code})` : ""}`);
+  for (const [phone, { code, at }] of failed) {
+    if (already.has(phone) || TEMPLATE_FAULT.has(code)) continue;
+    const hours = HOLD_HOURS[code];
+    if (hours) {
+      await store.holdRecipient(phone, `send failed (${code})`, at + hours * 3_600_000, now);
+    } else {
+      await store.recordOptOut(phone, `send failed${code ? ` (${code})` : ""}`);
+    }
     saved++;
   }
   return saved;
@@ -420,7 +436,7 @@ async function suppressFailedSends(store: Store): Promise<number> {
 export async function createDryRun(deps: CampaignDeps, input: { template: { name: string; language: string }; rows: readonly DryRunRow[]; send?: SendOptions; retry?: string[] }): Promise<DryRunResult> {
   const now = (deps.now ?? Date.now)();
   const send = cleanSend(input.send);
-  await suppressFailedSends(deps.store);
+  await suppressFailedSends(deps.store, now);
   const s = await screen(deps, input.template, input.rows, now, send, new Set(input.retry ?? []));
   const result: DryRunResult = {
     ok: s.ok,
@@ -480,7 +496,7 @@ export async function startCampaign(deps: CampaignDeps, id: string, token: strin
   if (now - c.createdAt > TOKEN_TTL_MS) return { ok: false, error: "The dry run is older than 24 hours; run it again so the checks use current data." };
 
   const stored = (await store.mkGet<CampaignRecipient[]>(key(id, ":r"))) ?? [];
-  await suppressFailedSends(store);
+  await suppressFailedSends(store, now);
   const s = await screen(deps, c.template, stored, now, c.send, new Set(c.retry ?? []));
   if (!s.ok) return { ok: false, error: "The checks no longer pass; nothing was started.", checks: s.checks.filter((x) => !x.ok) };
 

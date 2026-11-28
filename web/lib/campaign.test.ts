@@ -445,3 +445,28 @@ test("a failed send is opted out for every later campaign, and the Excel export 
   assert.equal(dry.summary.byReason.cooldown, 2, "the two messaged numbers are still under the 7-day cooldown");
   assert.equal(dry.summary.accepted, 0);
 });
+
+// 131026 opt-outs are covered by the tests above: the breaker halts this run on 131049, so no later number is reached here.
+test("131049 holds the number for 12 hours; 132001 records nothing", async () => {
+  const t = setup({ tier: "TIER_1K" });
+  const id = await started(t, 4);
+  t.g.failFor.set(phone(2), 131049);
+  t.g.failFor.set(phone(3), 132001);
+  for (let i = 0; i < 20; i++) {
+    const v = await advanceCampaign(t.deps, id, fast);
+    if (v.status === "completed") break;
+  }
+  const [held, template] = [phone(2), phone(3)];
+  // Holds and opt-outs are written when the next campaign or dry run is created.
+  const dry = await createDryRun(t.deps, { template: TEMPLATE, rows: rows(4) });
+  assert.equal((await t.store.optedOut([held])).has(held), false, "131049 is not an opt-out");
+  assert.equal((await t.store.optedOut([template])).has(template), false, "132001 is not an opt-out");
+  assert.equal((await t.store.heldPhones([held], t.clock.t)).has(held), true, "131049 is held");
+  assert.equal((await t.store.heldPhones([template], t.clock.t)).has(template), false, "132001 is not held");
+  t.clock.t += 13 * 3600_000;
+  assert.equal((await t.store.heldPhones([held], t.clock.t)).has(held), false, "the hold ends after 12 hours");
+
+  // The hold blocks the dry run; the 132001 number is not blocked by the failure.
+  assert.ok(dry.blocked.some((b) => b.phone === held && b.reason === "cooldown"), "held number is blocked");
+  assert.ok(!dry.blocked.some((b) => b.phone === template && b.reason !== "cooldown"), "template-fault number is not blocked");
+});

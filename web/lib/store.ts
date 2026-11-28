@@ -55,6 +55,7 @@ export interface KV {
 export type Summary = { waId: string; name?: string; lastAt: number; last?: StoredMessage; lastInboundAt?: number };
 
 type OptOut = { at: number; reason: string; active: boolean };
+type Hold = { until: number; reason: string };
 
 const MGET_CHUNK = 500;
 const WINDOW_SECONDS = 24 * 60 * 60;
@@ -300,6 +301,19 @@ export class Store {
   }
 
   /** Which of these numbers are currently opted out. */
+  /** A temporary hold after a failed send: the number gets no campaign message until `until` (ms). */
+  async holdRecipient(phone: string, reason: string, until: number, now = Date.now()) {
+    const ttl = Math.ceil((until - now) / 1000);
+    if (ttl <= 0) return;
+    await this.kv.set(`${this.p}mk:hold:${this.mkPhone(phone)}`, { until, reason } satisfies Hold, { ex: ttl });
+  }
+
+  /** The numbers under a hold right now. */
+  async heldPhones(phones: readonly string[], now = Date.now()): Promise<Set<string>> {
+    const rows = await this.mgetAll<Hold>(phones.map((p) => `${this.p}mk:hold:${this.mkPhone(p)}`));
+    return new Set(phones.filter((_, i) => (rows[i]?.until ?? 0) > now));
+  }
+
   async optedOut(phones: readonly string[]): Promise<Set<string>> {
     const rows = await this.mgetAll<OptOut>(phones.map((p) => `${this.p}mk:out:${this.mkPhone(p)}`));
     return new Set(phones.filter((_, i) => rows[i]?.active));
