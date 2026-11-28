@@ -894,7 +894,7 @@ export async function catchUpUnanswered(d: EngineDeps, now = Date.now(), opts: {
 // ---------- dry run for the dashboard ----------
 
 /** `id` and `timestamp` let a replay look the message up in the store (is_first) the way the original run did. */
-export type TestSample = { id?: string; timestamp?: number; text?: string; sender?: string; senderName?: string; chat?: string; type?: string; direction?: "in" | "out"; replyTo?: string };
+export type TestSample = { id?: string; timestamp?: number; text?: string; sender?: string; senderName?: string; chat?: string; type?: string; direction?: "in" | "out"; replyTo?: string; /** tags the chat has, as the sample should see them */ tags?: string[] };
 
 /** Evaluates one flow against a made-up message without sending or saving anything. */
 export async function testFlow(flow: Flow, sample: TestSample, d: EngineDeps, now = Date.now()) {
@@ -905,7 +905,7 @@ export async function testFlow(flow: Flow, sample: TestSample, d: EngineDeps, no
   };
   // A scheduled or webhook flow has no message, so it runs without one here too.
   const scheduled = flow.trigger.type !== "message";
-  const x = makeCtx(flow, d, now, scheduled ? undefined : msg, sample.senderName, []);
+  const x = makeCtx(flow, d, now, scheduled ? undefined : msg, sample.senderName, sample.tags ?? []);
   const triggered = scheduled ? true : triggerMatches({ ...flow, activeFrom: 0 }, msg, now);
   const m = await matches(flow, x, d, true);
   const dry = { ...d, flows: [] };
