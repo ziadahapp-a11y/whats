@@ -153,7 +153,12 @@ export class Store {
   }
 
   async messages(waId: string, limit = 30, before?: number): Promise<StoredMessage[]> {
-    const ids = await this.kv.zrange<string[]>(`${this.p}c:${waId}`, 0, Math.max(limit * 3, 60) - 1, { rev: true });
+    const window = Math.max(limit * 3, 60);
+    // Older pages: every id below `before` (the chat's timestamps are scores), keeping the newest `window` of them.
+    // The first page reads the newest ids directly.
+    const ids = before === undefined
+      ? await this.kv.zrange<string[]>(`${this.p}c:${waId}`, 0, window - 1, { rev: true })
+      : (await this.kv.zrange<string[]>(`${this.p}c:${waId}`, "-inf", before - 1, { byScore: true })).slice(-window).reverse();
     if (!ids.length) return [];
     const rows = await this.kv.mget<(StoredMessage | null)[]>(...ids.map((id) => `${this.p}m:${id}`));
     return rows

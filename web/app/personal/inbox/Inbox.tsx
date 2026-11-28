@@ -38,6 +38,10 @@ function App({ secret, status }: { secret: string; status: Status }) {
   const [tab, setTab] = useState<"chats" | "drafts">("chats");
   const [text, setText] = useState("");
   const [replyTo, setReplyTo] = useState<Msg | null>(null);
+  // Older messages loaded on demand, oldest first; they sit above the newest page.
+  const [older, setOlder] = useState<Msg[]>([]);
+  const [olderBusy, setOlderBusy] = useState(false);
+  const [noMoreOlder, setNoMoreOlder] = useState(false);
   const [tag, setTag] = useState("");
   const [busy, setBusy] = useState("");
   const [toast, setToast] = useState("");
@@ -75,6 +79,12 @@ function App({ secret, status }: { secret: string; status: Status }) {
     await Promise.all([chatsApi.reload(), draftsApi.reload()]);
   }, [chatsApi.reload, draftsApi.reload]);
   const loadThread = (_chat?: string) => threadApi.reload();
+
+  // A different chat starts again from its newest page.
+  useEffect(() => {
+    setOlder([]);
+    setNoMoreOlder(false);
+  }, [active]);
 
   useEffect(() => {
     if (chatsApi.error) say(chatsApi.error);
@@ -204,7 +214,11 @@ function App({ secret, status }: { secret: string; status: Status }) {
   const here = drafts.filter((d) => d.account === account && d.chat === active);
   const pending = drafts.length;
   const open = !!active;
-  const msgById = new Map((thread?.messages ?? []).map((m) => [m.id, m]));
+  const shown = (() => {
+    const seen = new Set<string>();
+    return [...older, ...(thread?.messages ?? [])].filter((m) => (seen.has(m.id) ? false : (seen.add(m.id), true)));
+  })();
+  const msgById = new Map(shown.map((m) => [m.id, m]));
 
   return (
     <>
@@ -300,7 +314,32 @@ function App({ secret, status }: { secret: string; status: Status }) {
                 <button type="button" className="btn ghost small" onClick={markRead} disabled={busy === "read"}>تعليم كمقروء</button>
               </header>
               <div className="msgs" onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
-                {(thread?.messages ?? []).filter((m) => m.type !== "reaction").map((m) => {
+                {thread && !noMoreOlder && shown.length > 0 && (
+                  <div style={{ textAlign: "center", margin: "8px 0" }}>
+                    <button
+                      type="button"
+                      className="btn ghost small"
+                      disabled={olderBusy}
+                      onClick={async () => {
+                        const oldest = shown[0]?.timestamp;
+                        if (!oldest || !active) return;
+                        setOlderBusy(true);
+                        try {
+                          const r = await call<{ messages: Msg[] }>(secret, `/api/personal/inbox?account=${account}&view=messages&chat=${encodeURIComponent(active)}&before=${oldest}&limit=60`);
+                          if (r.messages.length === 0) setNoMoreOlder(true);
+                          setOlder((prev) => [...r.messages, ...prev]);
+                        } catch (e) {
+                          say(errMsg(e));
+                        } finally {
+                          setOlderBusy(false);
+                        }
+                      }}
+                    >
+                      {olderBusy ? "…" : "تحميل الرسائل الأقدم"}
+                    </button>
+                  </div>
+                )}
+                {shown.filter((m) => m.type !== "reaction").map((m) => {
                   const quoted = m.replyTo ? msgById.get(m.replyTo) : undefined;
                   const body = m.text ?? m.caption ?? "";
                   return (
