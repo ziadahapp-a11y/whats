@@ -314,6 +314,27 @@ function App({ secret, status }: { secret: string; status: Status }) {
                 <button type="button" className="btn ghost small" onClick={markRead} disabled={busy === "read"}>تعليم كمقروء</button>
               </header>
               <div className="msgs" onScroll={(e) => { const el = e.currentTarget; stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80; }}>
+                {shown.filter((m) => m.type !== "reaction").map((m) => {
+                  const quoted = m.replyTo ? msgById.get(m.replyTo) : undefined;
+                  const body = m.text ?? m.caption ?? "";
+                  return (
+                    <div key={m.id} className={`m ${m.direction}`}>
+                      {m.direction === "in" && active!.endsWith("@g.us") && <div className="who">{m.senderName || (m.sender ? "+" + m.sender : "")}</div>}
+                      {quoted && <div className="quote">{(quoted.text ?? quoted.caption ?? `[${quoted.type}]`).slice(0, 120)}</div>}
+                      {body}
+                      {["image", "video", "audio", "document", "sticker"].includes(m.type) && <MediaBody secret={secret} account={account} message={m} />}
+                      <div className="meta">
+                        <time>{new Date(m.timestamp * 1000).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}</time>
+                        {m.direction === "out" && m.status && <span>{m.status === "read" ? "✓✓ قُرئت" : m.status === "delivered" ? "✓✓" : m.status === "failed" ? "فشل" : m.status === "sending" ? "…" : "✓"}</span>}
+                        <span className="acts">
+                          <button type="button" title="رد" onClick={() => setReplyTo(m)}>↩</button>
+                          {EMOJIS.map((e) => <button type="button" key={e} title={`تفاعل ${e}`} onClick={() => react(m, e)}>{e}</button>)}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })}
+                {!thread && <div className="skel" style={{ height: 120 }} />}
                 {thread && !noMoreOlder && shown.length > 0 && (
                   <div style={{ textAlign: "center", margin: "8px 0" }}>
                     <button
@@ -339,27 +360,6 @@ function App({ secret, status }: { secret: string; status: Status }) {
                     </button>
                   </div>
                 )}
-                {shown.filter((m) => m.type !== "reaction").map((m) => {
-                  const quoted = m.replyTo ? msgById.get(m.replyTo) : undefined;
-                  const body = m.text ?? m.caption ?? "";
-                  return (
-                    <div key={m.id} className={`m ${m.direction}`}>
-                      {m.direction === "in" && active!.endsWith("@g.us") && <div className="who">{m.senderName || (m.sender ? "+" + m.sender : "")}</div>}
-                      {quoted && <div className="quote">{(quoted.text ?? quoted.caption ?? `[${quoted.type}]`).slice(0, 120)}</div>}
-                      {body}
-                      {["image", "video", "audio", "document", "sticker"].includes(m.type) && <MediaBody secret={secret} account={account} message={m} />}
-                      <div className="meta">
-                        <time>{new Date(m.timestamp * 1000).toLocaleTimeString("ar", { hour: "2-digit", minute: "2-digit" })}</time>
-                        {m.direction === "out" && m.status && <span>{m.status === "read" ? "✓✓ قُرئت" : m.status === "delivered" ? "✓✓" : m.status === "failed" ? "فشل" : m.status === "sending" ? "…" : "✓"}</span>}
-                        <span className="acts">
-                          <button type="button" title="رد" onClick={() => setReplyTo(m)}>↩</button>
-                          {EMOJIS.map((e) => <button type="button" key={e} title={`تفاعل ${e}`} onClick={() => react(m, e)}>{e}</button>)}
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-                {!thread && <div className="skel" style={{ height: 120 }} />}
                 <div ref={bottom} />
               </div>
               {here.length > 0 && (
