@@ -1,8 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { MemoryKV, Store } from "./store";
+import { MemoryKV, Store, type StoredMessage } from "./store";
 import { MemoryRawKV } from "./wa/auth";
-import { testFlow, type Channel, type EngineDeps } from "./flows/engine";
+import { runFlows, testFlow, type Channel, type EngineDeps } from "./flows/engine";
 import { FlowInput, type Flow } from "./flows/types";
 import { exportFlows, parseImport } from "./flows/portable";
 import { surveyFlows, TAG } from "./survey-flows";
@@ -67,4 +67,43 @@ test("the flows survive the export and import round trip, and the import warns t
   assert.equal(back.flows.length, flows.length);
   assert.equal((back.flows[0]?.actions ?? [])[0]?.type, "reply");
   assert.ok(back.warnings.some((w) => w.includes("مسودة")));
+});
+
+function live(over: Partial<EngineDeps> = {}) {
+  const sent: string[] = [];
+  const ch: Channel = { ...channel, sendText: async (_chat, text) => (sent.push(text), "out" + sent.length) };
+  const state = new MemoryRawKV();
+  const deps: EngineDeps = { flows: surveyFlows().map((f) => ({ ...FlowInput.parse(f), id: f.name, createdAt: NOW, updatedAt: NOW, activeFrom: 0 }) as Flow), state, store: new Store(new MemoryKV(), "p:"), channel: ch, ...over };
+  return { deps, sent, state };
+}
+
+function incoming(id: string, text: string, later = 0): StoredMessage {
+  return { id, waId: CHAT, direction: "in", type: "text", text, timestamp: Math.floor(NOW / 1000) + later, sender: "966500000001", senderName: "Sara" };
+}
+
+test("a failing AI answer sends nothing to the merchant; the survey stays on the choice", async () => {
+  let aiCalls = 0;
+  const { deps, sent } = live({ ai: async () => { aiCalls++; throw new Error("model down"); } });
+  const start = incoming("s1", "تم");
+  await deps.store.saveMessage(start);
+  await runFlows(deps, [start], NOW);
+  assert.equal(sent.length, 1, "the intro is sent");
+
+  const question = incoming("q1", "كم سعر الباقة؟", 60);
+  await deps.store.saveMessage(question);
+  const logs = await runFlows(deps, [question], NOW);
+  assert.equal(aiCalls, 1, "the model was actually asked");
+  assert.equal(sent.length, 1, "nothing is sent when the AI call throws");
+  assert.ok(logs.length > 0, "the run is logged");
+});
+
+// Known gap: both runs read the tags before either saves them, so two intros can go out. Fix needs approval.
+test("two 'تم' arriving together start the survey once", { todo: "race: both runs pass the start check before tags are saved" }, async () => {
+  const { deps, sent } = live();
+  const a = incoming("t1", "تم");
+  const b = incoming("t2", "تم ✅", 1);
+  await deps.store.saveMessage(a);
+  await deps.store.saveMessage(b);
+  await Promise.all([runFlows(deps, [a], NOW), runFlows(deps, [b], NOW)]);
+  assert.equal(sent.length, 1, "the intro must go out once");
 });
